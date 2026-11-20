@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[package]
+name = "pxp-machine"
+description = "Machine kit folder model (machine.toml, graphics, setup), kinematic chains and limits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+pxp-math = { workspace = true }
+pxp-units = { workspace = true }

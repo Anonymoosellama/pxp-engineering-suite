@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# One pinned compiler for local builds, CI and releases. Recompute must be
+# deterministic across OSes, and a single toolchain removes one source of
+# drift. Bump deliberately, together with workspace.package.rust-version.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

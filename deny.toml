@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# cargo-deny policy. See docs/adr/ADR-0001-project-licence.md for why each
+# licence is (or is not) on the allow list.
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    # The LLVM exception waives the Apache sections that conflict with
+    # GPLv2-family licences, so this is compatible with LGPL-2.1.
+    "Apache-2.0 WITH LLVM-exception",
+    "LGPL-2.0-or-later",
+    "LGPL-2.1-or-later",
+]
+# Plain "Apache-2.0" is NOT globally allowed. "MIT OR Apache-2.0" crates pass
+# via MIT. An Apache-2.0-ONLY crate must be listed here, and recorded in
+# ADR-0001, because linking it means binaries are conveyed under LGPL-3.0.
+exceptions = [
+    # { allow = ["Apache-2.0"], crate = "solidcore" },  # pending ADR-0004
+]
+
+[licenses.private]
+# Our own crates are publish = false and LGPL-2.1-or-later (already allowed).
+ignore = false
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# Internal path dependencies carry no version; that is fine for unpublished
+# workspace crates.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

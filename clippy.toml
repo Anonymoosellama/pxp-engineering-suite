@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Tests may unwrap, expect, panic and index: a failing test SHOULD panic, and
+# test code is never shipped. Library and binary code may not (see the
+# [workspace.lints.clippy] table in Cargo.toml).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Unit symbols and product names that are prose, not code identifiers.
+# ".." keeps clippy's built-in list.
+doc-valid-idents = [
+    "MPa", "GPa", "kPa", "kN", "mJ",
+    "SolidCraft", "SolidCore", "PrusaSlicer", "FreeCAD", "CalculiX", "OpenCASCADE",
+    "WebAssembly", "UUIDv7", "SplitMix64", "BigCrush", "SQLite", "SMLib", "SpMV", "ASan", "TrueType", "OpenType", "GitHub", "TechDraw", "LibreCAD",
+    "..",
+]

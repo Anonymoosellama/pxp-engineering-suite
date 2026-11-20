@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# PXP Engineering Suite — Cargo workspace.
+#
+# Layering (enforced by tools/check_repo.py using tools/layers.toml):
+#   0 foundation -> 1 document core -> 2 file format and geometry
+#   -> 3 shared services (appkit, render, data exchange, domain libraries)
+#   -> 4 applications -> 5 shell (UI, desktop binary, CLI)
+# A crate may depend only on crates in its own layer or below, applications
+# never depend on each other, and only shell crates may name a concrete
+# kernel backend.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+# MSRV. Kept equal to the toolchain pinned in rust-toolchain.toml so local
+# builds, CI and release builds all use one compiler (determinism rule).
+rust-version = "1.97"
+license = "LGPL-2.1-or-later"
+authors = ["PXP Engineering Suite contributors"]
+
+[workspace.dependencies]
+# Internal crates. External crates are added here (one version for the whole
+# workspace) once crates.io access is available; see docs/STATUS.md.
+pxp-units = { path = "crates/pxp-units" }
+pxp-math = { path = "crates/pxp-math" }
+pxp-platform = { path = "crates/pxp-platform" }
+pxp-compute = { path = "crates/pxp-compute" }
+pxp-diag = { path = "crates/pxp-diag" }
+pxp-doc = { path = "crates/pxp-doc" }
+pxp-format = { path = "crates/pxp-format" }
+pxp-kernel = { path = "crates/pxp-kernel" }
+pxp-kernel-native = { path = "crates/pxp-kernel-native" }
+pxp-kernel-occt = { path = "crates/pxp-kernel-occt" }
+pxp-sketch = { path = "crates/pxp-sketch" }
+pxp-tess = { path = "crates/pxp-tess" }
+pxp-appkit = { path = "crates/pxp-appkit" }
+pxp-render = { path = "crates/pxp-render" }
+pxp-io = { path = "crates/pxp-io" }
+pxp-io-step = { path = "crates/pxp-io-step" }
+pxp-io-iges = { path = "crates/pxp-io-iges" }
+pxp-io-dxf = { path = "crates/pxp-io-dxf" }
+pxp-io-pdf = { path = "crates/pxp-io-pdf" }
+pxp-io-stl = { path = "crates/pxp-io-stl" }
+pxp-io-3mf = { path = "crates/pxp-io-3mf" }
+pxp-cam = { path = "crates/pxp-cam" }
+pxp-additive = { path = "crates/pxp-additive" }
+pxp-machine = { path = "crates/pxp-machine" }
+pxp-post = { path = "crates/pxp-post" }
+pxp-vnc = { path = "crates/pxp-vnc" }
+pxp-fea = { path = "crates/pxp-fea" }
+pxp-topopt = { path = "crates/pxp-topopt" }
+pxp-scan = { path = "crates/pxp-scan" }
+pxp-pointcloud = { path = "crates/pxp-pointcloud" }
+pxp-app-modeling = { path = "crates/pxp-app-modeling" }
+pxp-app-drafting = { path = "crates/pxp-app-drafting" }
+pxp-app-manufacturing = { path = "crates/pxp-app-manufacturing" }
+pxp-app-postgen = { path = "crates/pxp-app-postgen" }
+pxp-app-machine-kit = { path = "crates/pxp-app-machine-kit" }
+pxp-app-cae = { path = "crates/pxp-app-cae" }
+pxp-ui = { path = "crates/pxp-ui" }
+
+[workspace.lints.rust]
+# Every crate also carries #![forbid(unsafe_code)] in its root so the rule is
+# visible where the code is; the only future exceptions are named FFI crates
+# listed in tools/layers.toml [unsafe].allow.
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Master prompt: no unwrap/expect/panic/todo/unimplemented outside tests,
+# and no unchecked indexing in library crates. Tests are exempted in
+# clippy.toml.
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+# Allowed pedantic lints (each needs a reason, per the master prompt):
+# - module_name_repetitions: names like `doc::DocError` read better than the
+#   alternatives and are idiomatic in this codebase's public API.
+module_name_repetitions = "allow"
+# - must_use_candidate: would add #[must_use] to nearly every accessor; we
+#   apply it by hand where ignoring a result is a real bug (Results already are).
+must_use_candidate = "allow"
+
+[profile.release]
+# Debug info in release builds makes local crash reports useful (no telemetry).
+debug = "line-tables-only"

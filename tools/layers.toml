@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Architecture layers, read by tools/check_repo.py.
+#
+# Rule 1: a crate may depend on crates in its own layer or a LOWER layer only.
+# Rule 2: crates in the "applications" layer never depend on each other.
+# Rule 3: only crates in the "shell" layer may depend on a concrete kernel
+#         backend (listed in [kernel].backends); everything else reaches
+#         geometry through the pxp-kernel trait.
+# Rule 4: every workspace crate appears in exactly one layer.
+# Rule 5: every crate root has #![forbid(unsafe_code)] unless it is listed in
+#         [unsafe].allow (FFI crates only, each justified in an ADR).
+
+[[layer]]
+name = "foundation"
+crates = ["pxp-units", "pxp-math", "pxp-platform", "pxp-compute", "pxp-diag"]
+
+[[layer]]
+name = "document"
+crates = ["pxp-doc"]
+
+[[layer]]
+name = "storage-geometry"
+crates = [
+    "pxp-format",
+    "pxp-kernel",
+    "pxp-kernel-native",
+    "pxp-kernel-occt",
+    "pxp-sketch",
+    "pxp-tess",
+]
+
+[[layer]]
+name = "services"
+crates = [
+    "pxp-appkit",
+    "pxp-render",
+    "pxp-io",
+    "pxp-io-step",
+    "pxp-io-iges",
+    "pxp-io-dxf",
+    "pxp-io-pdf",
+    "pxp-io-stl",
+    "pxp-io-3mf",
+    "pxp-cam",
+    "pxp-additive",
+    "pxp-machine",
+    "pxp-post",
+    "pxp-vnc",
+    "pxp-fea",
+    "pxp-topopt",
+    "pxp-scan",
+    "pxp-pointcloud",
+]
+
+[[layer]]
+name = "applications"
+crates = [
+    "pxp-app-modeling",
+    "pxp-app-drafting",
+    "pxp-app-manufacturing",
+    "pxp-app-postgen",
+    "pxp-app-machine-kit",
+    "pxp-app-cae",
+]
+
+[[layer]]
+name = "shell"
+crates = ["pxp-ui", "pxp-app", "pxp-cli"]
+
+[kernel]
+backends = ["pxp-kernel-native", "pxp-kernel-occt"]
+
+[unsafe]
+# Future: "pxp-kernel-occt-sys" (OCCT FFI), with an ADR and Miri/ASan in CI.
+allow = []

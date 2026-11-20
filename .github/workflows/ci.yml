@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# CI for every push and pull request. Nothing counts as done until every job
+# here is green on every OS (master prompt, "Session loop").
+#
+# Not yet present, added as their crates land (never as empty jobs):
+#   - fuzz smoke test        -> with pxp-format's first parser (sub-stage 0E)
+#   - criterion benchmarks   -> with the performance budgets (0J)
+#   - packaging (MSI/MSIX, DMG, AppImage, Flatpak, .deb) -> with pxp-app (0H/0J)
+#   - nightly long fuzzing and the full kernel corpus -> .github/workflows/nightly.yml (0F)
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  policy:
+    name: repo policy (layers, unsafe, docs, SPDX)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Repository checks
+        run: python3 tools/check_repo.py
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: cargo fmt --all --check
+
+  deny:
+    name: cargo-deny (licences, bans, advisories, sources)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  test:
+    name: clippy + test + doc (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04        # Linux x86_64
+          - ubuntu-24.04-arm    # Linux aarch64
+          - windows-2025        # Windows x64
+          - windows-11-arm      # Windows ARM64
+          - macos-15            # macOS arm64
+          - macos-15-intel      # macOS x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (pedantic, warnings are errors)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+      - name: Rustdoc (warnings are errors)
+        run: cargo doc --workspace --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[package]
+name = "pxp-fea"
+description = "Linear static, modal and harmonic FEA: meshing interface, assembly, solvers, results."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+pxp-doc = { workspace = true }
+pxp-kernel = { workspace = true }
+pxp-math = { workspace = true }
+pxp-units = { workspace = true }
+pxp-compute = { workspace = true }
