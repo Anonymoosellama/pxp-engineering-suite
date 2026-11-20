@@ -329,7 +329,8 @@ impl Document {
     }
 
     /// Regenerates every out-of-date object whose kind has an immediate
-    /// update policy (see [`recompute`] module docs for the algorithm).
+    /// update policy. The algorithm (candidates, blocking, Kahn levels) is described
+    /// in `docs/design/document-core.md`.
     ///
     /// On success all results are committed in one step, merged into the
     /// undo step of the edit that caused them (so one undo reverts both). If

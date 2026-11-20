@@ -45,25 +45,78 @@ The agent keeps this file true at all times; the user confirms gate outcomes.
 - CI has never run: the workflow is written but cannot be exercised from this sandbox, so "CI green on all three OSes" is not yet met for anything.
 - Snapshots copy the object map (Arc-shared objects, O(n) pointer copies per transaction). Acceptable for Stage 0 scale; replace with a persistent map once crates are available (ADR-0006).
 
-## Done
+## Done (session 1, 2026-11-20)
 
-*(updated at the end of the session)*
+Measured locally on Linux x86_64 with Rust 1.97.0. **CI has not run yet**
+(no remote repository), so nothing is "done" by the master prompt's
+definition until the matrix is green on all three OSes.
+
+| Item | Evidence |
+| --- | --- |
+| Repository, master prompt, ADR-0001 (licence asked; user chose LGPL-2.1-or-later), `LICENSE` | `docs/` |
+| Workspace with all 39 crates, layered; 24 placeholders document their responsibility and planned stage and export no callable stubs | `cargo metadata`; `pxp-cli status` |
+| Lint policy: edition 2024, `forbid(unsafe_code)` everywhere, clippy pedantic + `unwrap_used`/`expect_used`/`indexing_slicing`/`panic` denied | `cargo clippy --workspace --all-targets -- -D warnings`: 0 findings |
+| Repo policy checks (layers, unsafe, crate docs, SPDX) | `python3 tools/check_repo.py`: 0 problems |
+| `deny.toml` (ADR-0001 licence list; plain Apache-2.0 needs a recorded exception) | not yet run: cargo-deny needs network |
+| CI matrix: Linux x86_64/aarch64, Windows x64/ARM64, macOS arm64/x86_64 | `.github/workflows/ci.yml` (never executed) |
+| `pxp-units`: coherent mm-t-s units, newtypes, runtime quantities, unit parsing, mm/inch display (ADR-0007) | 27 unit tests + doc-tests |
+| `pxp-math`: vectors, transforms, Csys, Aabb, tolerances, stable FNV-1a hash | 17 tests |
+| `pxp-diag`, `pxp-compute`: error reports, panic messages, cancellation, ordered parallel map | 6 tests |
+| `pxp-doc`: object store, expressions, dependency graph, transactions, undo/redo with memory cap, change bus, snapshots, parallel all-or-nothing recompute (ADR-0006) | 18 unit + 20 integration + 3 doc-tests, incl. 100-step undo/redo, panic rollback, failure isolation, determinism |
+| `pxp-kernel`: `GeometryKernel` trait, `OpResult`/`TopoHistory`, primitive specs, `KernelHost` (in-process, panic containment, history-completeness check) | 6 contract tests |
+| `pxp-appkit` + six applications registered (78 commands, all honestly "Planned for Stage N." except the six application switches) | 5 + 18 tests |
+| `pxp-cli`: apps, commands, find, shortcut, eval, status, version | 5 tests; manual runs |
+| Design notes with Mermaid diagrams: architecture, document core, kernel contract, expressions and units; ADR-0002 to ADR-0007; citations file | `docs/design/`, `docs/adr/`, `docs/CITATIONS.md` |
+
+Workspace total: **129 tests passing, 0 failing**; rustdoc with `-D warnings`
+clean.
 
 ## In progress
 
-*(updated at the end of the session)*
+- Nothing half-finished in the tree. Stage 0 overall remains in progress:
+  0E to 0J are outstanding (see the table above).
 
 ## Blocked
 
-- 0E, 0F, 0H and the MCP half of 0I need crates.io. Fix: allow package installs in the claude.ai network settings, then start a new chat (an existing chat may not pick up the change).
+- 0E (`.pxp` SQLite format), 0F (kernel bake-off), 0H (UI and viewer, ADR-0002
+  prototypes), the MCP half of 0I, cargo-deny, proptest and criterion all need
+  crates.io (and git for SolidCore). **Fix:** allow package installs in the
+  claude.ai network settings, then start a new chat (an existing chat may not
+  pick up the change).
+- CI needs a GitHub repository. **Fix:** create one (empty) and connect it, so
+  the next session can push and the matrix can run.
 
 ## Decisions needed from the user
 
-*(none open)*
+- None blocking. Optional, before Stage 4: whether user-written post
+  processors that embed library layers should get an explicit licence
+  exception (under LGPL they may stay private for in-shop use either way).
 
 ## Decisions taken
 
 - ADR-0001: LGPL-2.1-or-later (user, 2026-11-20).
+- ADR-0006: document core design and `Application` trait additions (agent).
+- ADR-0007: coherent mm-t-s internal units; NX degree convention for bare
+  numbers in trig (agent).
+- ADR-0002 to ADR-0005: written as Proposed with evaluation plans; decisions
+  wait for prototypes and measurements.
+
+## Proposed plan for session 2 (Stage 0, needs crates.io)
+
+1. Run cargo-deny and the CI matrix; fix anything platform-specific.
+2. 0E: `pxp-format` on rusqlite: schema (ADR-0003 refinements), atomic save,
+   open, migrations framework, recovery journal, rolling backups, advisory
+   lock, first fuzz target.
+3. 0F: kernel bake-off harness; SolidCore adapter in `pxp-kernel-native`;
+   OCCT worker process in `pxp-kernel-occt`; corpus of 200+ parts; ADR-0004
+   decision.
+4. 0G: primitives and datum CSYS through the kernel trait; persistent naming
+   for primitive faces from `TopoHistory` roles.
+5. 0H: ADR-0002 prototypes (egui + `egui_dock` vs the second candidate after
+   the Slint licence check), then the NX-style shell and wgpu viewer.
+6. Swap `par_map` to rayon and `DocState`'s map to a persistent map; add
+   proptest invariants and criterion benchmarks with the Stage 0 performance
+   budgets.
 
 ## Temporary deviations from the master prompt
 
