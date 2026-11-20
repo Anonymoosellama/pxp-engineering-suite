@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[package]
+name = "pxp-app"
+description = "PXP Engineering Suite desktop application binary (graphical shell arrives in sub-stage 0H)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "pxp"
+path = "src/main.rs"
+
+[dependencies]
+pxp-appkit = { workspace = true }
+pxp-ui = { workspace = true }
+pxp-app-modeling = { workspace = true }
+pxp-app-drafting = { workspace = true }
+pxp-app-manufacturing = { workspace = true }
+pxp-app-postgen = { workspace = true }
+pxp-app-machine-kit = { workspace = true }
+pxp-app-cae = { workspace = true }

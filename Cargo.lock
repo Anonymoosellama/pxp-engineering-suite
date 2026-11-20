@@ -14,6 +14,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "pxp-app"
+version = "0.0.1"
+dependencies = [
+ "pxp-app-cae",
+ "pxp-app-drafting",
+ "pxp-app-machine-kit",
+ "pxp-app-manufacturing",
+ "pxp-app-modeling",
+ "pxp-app-postgen",
+ "pxp-appkit",
+ "pxp-ui",
+]
+
+[[package]]
+name = "pxp-app-cae"
+version = "0.0.1"
+dependencies = [
+ "pxp-appkit",
+]
+
+[[package]]
+name = "pxp-app-drafting"
+version = "0.0.1"
+dependencies = [
+ "pxp-appkit",
+]
+
+[[package]]
+name = "pxp-app-machine-kit"
+version = "0.0.1"
+dependencies = [
+ "pxp-appkit",
+]
+
+[[package]]
+name = "pxp-app-manufacturing"
+version = "0.0.1"
+dependencies = [
+ "pxp-appkit",
+]
+
+[[package]]
+name = "pxp-app-modeling"
+version = "0.0.1"
+dependencies = [
+ "pxp-appkit",
+]
+
+[[package]]
+name = "pxp-app-postgen"
+version = "0.0.1"
+dependencies = [
+ "pxp-appkit",
+]
+
+[[package]]
 name = "pxp-appkit"
 version = "0.0.1"
 dependencies = [
@@ -29,6 +85,46 @@ dependencies = [
  "pxp-kernel",
  "pxp-math",
  "pxp-units",
+]
+
+[[package]]
+name = "pxp-cli"
+version = "0.0.1"
+dependencies = [
+ "pxp-additive",
+ "pxp-app-cae",
+ "pxp-app-drafting",
+ "pxp-app-machine-kit",
+ "pxp-app-manufacturing",
+ "pxp-app-modeling",
+ "pxp-app-postgen",
+ "pxp-appkit",
+ "pxp-cam",
+ "pxp-compute",
+ "pxp-doc",
+ "pxp-fea",
+ "pxp-format",
+ "pxp-io",
+ "pxp-io-3mf",
+ "pxp-io-dxf",
+ "pxp-io-iges",
+ "pxp-io-pdf",
+ "pxp-io-step",
+ "pxp-io-stl",
+ "pxp-kernel-native",
+ "pxp-kernel-occt",
+ "pxp-machine",
+ "pxp-platform",
+ "pxp-pointcloud",
+ "pxp-post",
+ "pxp-render",
+ "pxp-scan",
+ "pxp-sketch",
+ "pxp-tess",
+ "pxp-topopt",
+ "pxp-ui",
+ "pxp-units",
+ "pxp-vnc",
 ]
 
 [[package]]
