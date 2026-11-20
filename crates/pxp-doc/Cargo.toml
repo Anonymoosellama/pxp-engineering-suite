@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[package]
+name = "pxp-doc"
+description = "Document core: object store, typed unit-aware properties, NX-style expressions, dependency graph, recompute, transactions, undo/redo, change bus, snapshots."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+pxp-units = { workspace = true }
+pxp-diag = { workspace = true }
+pxp-compute = { workspace = true }
