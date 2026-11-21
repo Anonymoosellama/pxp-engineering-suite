@@ -135,7 +135,13 @@ Workspace total: **181 tests passing, 0 failing**; clippy (pedantic,
   fuzz. The `determinism` job failed only because macOS x86_64 showed the
   same case-3460 difference as macOS arm64 and was not yet in the known
   list; added in the next commit.
-- Final status of the last push: recorded below when it completes.
+- Run 44940966364 (commit `709a1dc`): **every job green**: clippy, tests,
+  rustdoc and the bake-off on all six targets, the cross-OS hash
+  comparison (65 / 66 identical everywhere, case 3460 a listed macOS
+  finding), policy, rustfmt, cargo-deny and fuzz:
+  <https://github.com/Anonymoosellama/pxp-engineering-suite/actions/runs/44940966364>.
+  The session 2 items above therefore meet the "CI green on all three OSes"
+  condition. Later commits in this session change only documentation.
 
 ## Done (session 1, 2026-11-20)
 
@@ -212,13 +218,17 @@ clean.
 1. OCCT half of 0F: `pxp-kernel-occt` in a worker process (versioned
    protocol, restart, transaction replay), measured on the same corpus;
    decide ADR-0004.
-2. Grow the corpus towards 200 parts: NIST STEP models once `nist.gov` is
+2. Find why case 3460's hash differs on macOS (fingerprints now include
+   centroids; next, per-part sub-hashes of coordinates and entity order),
+   then fix the hash or report it to SolidCraft, and empty
+   `tools/ci/known-cross-os-differences.txt`.
+3. Grow the corpus towards 200 parts: NIST STEP models once `nist.gov` is
    reachable and STEP import exists; more synthetic stress cases; slow cases
    in a nightly workflow.
-3. 0H: ADR-0002 UI prototypes, the NX-style shell, the wgpu viewer, the
+4. 0H: ADR-0002 UI prototypes, the NX-style shell, the wgpu viewer, the
    Block dialog and the WCS.
-4. 0I: MCP server and session journaling with geometry-hash comparison.
-5. Persistent map for `DocState`; criterion benchmarks with the Stage 0
+5. 0I: MCP server and session journaling with geometry-hash comparison.
+6. Persistent map for `DocState`; criterion benchmarks with the Stage 0
    budgets (0J).
 
 ## Temporary deviations from the master prompt

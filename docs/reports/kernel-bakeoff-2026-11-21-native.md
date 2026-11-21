@@ -58,9 +58,10 @@ Timings below come from an optimised build (`opt-level = 1`, see
    merged face count, shells, volume and area agree to 12 significant
    digits on every target. Since the two Mac architectures agree with each
    other and Linux aarch64 agrees with x86_64, the cause is the platform
-   maths library, not the processor; what differs is a vertex coordinate,
-   the centroid or the entity order. CI prints each case's fingerprint
-   (now with centroids) to narrow it down in session 3; the pair is listed
+   maths library, not the processor. The centroid also agrees to 12 digits
+   (CI run 44940966364), so what differs is a vertex coordinate (by more
+   than 1 nm, or across a rounding boundary of the hash), the entity order,
+   or a curve or surface kind. Session 3 narrows it down; the pair is listed
    in `tools/ci/known-cross-os-differences.txt` so any *new* difference
    still fails CI.
 5. **Slow case.** The level-3 Menger sponge join takes 178 s (SolidCraft's
