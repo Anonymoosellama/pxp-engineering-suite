@@ -20,6 +20,11 @@ path = "src/main.rs"
 pxp-units = { workspace = true }
 pxp-compute = { workspace = true }
 pxp-doc = { workspace = true }
+pxp-math = { workspace = true }
+pxp-format = { workspace = true }
+pxp-kernel = { workspace = true }
+# The shell chooses the geometry backend (ADR-0004 bake-off candidate).
+pxp-kernel-native = { workspace = true }
 pxp-appkit = { workspace = true }
 pxp-app-modeling = { workspace = true }
 pxp-app-drafting = { workspace = true }
@@ -29,9 +34,6 @@ pxp-app-machine-kit = { workspace = true }
 pxp-app-cae = { workspace = true }
 # Placeholder crates, linked only so `pxp-cli status` reports their planned
 # stage from the crates themselves rather than from a hand-kept list.
-pxp-platform = { workspace = true }
-pxp-format = { workspace = true }
-pxp-kernel-native = { workspace = true }
 pxp-kernel-occt = { workspace = true }
 pxp-sketch = { workspace = true }
 pxp-tess = { workspace = true }

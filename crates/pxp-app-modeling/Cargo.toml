@@ -14,3 +14,7 @@ workspace = true
 
 [dependencies]
 pxp-appkit = { workspace = true }
+pxp-doc = { workspace = true }
+pxp-kernel = { workspace = true }
+pxp-math = { workspace = true }
+pxp-units = { workspace = true }

@@ -5,10 +5,15 @@
 //! application, without a window. In Stage 0 it is the main way to exercise
 //! what exists.
 //!
-//! ## Commands (session 1)
+//! ## Commands
 //!
 //! | Command | What it does |
 //! | --- | --- |
+//! | `pxp-cli part new FILE [--units mm\|in]` | New `.pxp` part from the mm or inch template (a datum CSYS at the origin) |
+//! | `pxp-cli part block\|cylinder\|cone\|sphere FILE …` | Adds a primitive: parameters become expressions, the Modeling application regenerates it through the kernel, the file is saved (see `part help`) |
+//! | `pxp-cli part info FILE` | Features, states, kernels, geometry hashes, and mass properties read from the stored exact B-reps |
+//! | `pxp-cli part verify FILE` | Re-imports every stored B-rep and regenerates every feature: hashes and bytes must match (exit 1 otherwise) |
+//! | `pxp-cli bakeoff [--corpus …] [--format summary\|markdown\|hashes]` | Runs the kernel bake-off corpus against the native backend |
 //! | `pxp-cli apps` | Lists the six applications and when their commands arrive |
 //! | `pxp-cli commands [APP]` | Lists commands (all, or one application's) with status, ribbon placement and shortcut |
 //! | `pxp-cli find QUERY` | Command Finder: search commands by label, ID or description |
@@ -19,7 +24,14 @@
 //!
 //! Planned for sub-stage 0I: `pxp-cli mcp` (MCP server over stdio) and
 //! session journaling with record, replay and geometry-hash comparison. They
-//! need a JSON library from crates.io and are not offered until they work.
+//! are not offered until they work.
+//!
+//! ## Kernel
+//!
+//! The CLI is a shell crate, so it is the layer that chooses the geometry
+//! backend: SolidCraft's kernel through `pxp-kernel-native`, hosted
+//! in-process by a `KernelHost`. Linking it means this binary is conveyed
+//! under LGPL-3.0 (ADR-0001).
 //!
 //! ## Responsibility and limits
 //!
@@ -29,12 +41,17 @@
 //! the library crates.
 #![forbid(unsafe_code)]
 
+mod bakeoff;
+mod part;
+
 use pxp_appkit::{AppRegistry, CommandSpec, CommandStatus};
 use pxp_compute::CancelToken;
 use pxp_doc::{Document, ExpressionsOnly};
+use pxp_kernel::KernelHost;
 use pxp_units::UnitSystem;
 use std::fmt::Write as _;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 /// A CLI failure: a usage error (exit 2) or a command error (exit 1).
 #[derive(Debug)]
@@ -61,7 +78,7 @@ impl std::fmt::Display for CliError {
     }
 }
 
-const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|status|version>";
+const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|status|version>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -77,12 +94,23 @@ fn main() -> ExitCode {
     }
 }
 
+/// The geometry kernel this shell wires in: SolidCraft's, in-process.
+fn native_kernel() -> Arc<KernelHost> {
+    Arc::new(KernelHost::in_process(Box::new(
+        pxp_kernel_native::NativeKernel::new(),
+    )))
+}
+
 /// Builds the registry with every built-in application, in Application-tab
-/// order.
-fn builtin_registry() -> Result<AppRegistry, CliError> {
+/// order. Modeling regenerates geometry through `kernel` when one is given.
+fn builtin_registry(kernel: Option<Arc<KernelHost>>) -> Result<AppRegistry, CliError> {
     let mut r = AppRegistry::new();
+    let modeling = kernel.map_or_else(
+        pxp_app_modeling::Modeling::new,
+        pxp_app_modeling::Modeling::with_kernel,
+    );
     let apps: [Box<dyn pxp_appkit::Application>; 6] = [
-        Box::new(pxp_app_modeling::Modeling),
+        Box::new(modeling),
         Box::new(pxp_app_drafting::Drafting),
         Box::new(pxp_app_manufacturing::Manufacturing),
         Box::new(pxp_app_postgen::PostGeneration),
@@ -106,6 +134,12 @@ fn run(args: &[String]) -> Result<String, CliError> {
         "find" => find(&rest.join(" ")),
         "shortcut" => shortcut(&rest.join(" ")),
         "eval" => eval(rest),
+        "part" => {
+            let kernel = native_kernel();
+            let registry = builtin_registry(Some(Arc::clone(&kernel)))?;
+            part::run(rest, &registry, &kernel)
+        }
+        "bakeoff" => bakeoff::run(rest, &native_kernel()),
         "status" => Ok(status()),
         "version" | "--version" | "-V" => Ok(version()),
         "help" | "--help" | "-h" => Ok(format!("{USAGE}\n")),
@@ -114,7 +148,7 @@ fn run(args: &[String]) -> Result<String, CliError> {
 }
 
 fn apps() -> Result<String, CliError> {
-    let r = builtin_registry()?;
+    let r = builtin_registry(Some(native_kernel()))?;
     let mut out = String::new();
     for app in r.apps() {
         let switch = r
@@ -151,7 +185,7 @@ fn format_command(c: &CommandSpec) -> String {
 }
 
 fn commands(app: Option<&str>) -> Result<String, CliError> {
-    let r = builtin_registry()?;
+    let r = builtin_registry(Some(native_kernel()))?;
     let filter = app.map(|a| {
         if a.contains('.') {
             a.to_owned()
@@ -179,7 +213,7 @@ fn find(query: &str) -> Result<String, CliError> {
     if query.trim().is_empty() {
         return Err(CliError::Usage("find needs a search term".into()));
     }
-    let r = builtin_registry()?;
+    let r = builtin_registry(Some(native_kernel()))?;
     let hits = r.find(query.trim());
     if hits.is_empty() {
         return Ok(format!("no command matches '{}'\n", query.trim()));
@@ -193,7 +227,7 @@ fn find(query: &str) -> Result<String, CliError> {
 }
 
 fn shortcut(keys: &str) -> Result<String, CliError> {
-    let r = builtin_registry()?;
+    let r = builtin_registry(Some(native_kernel()))?;
     match r.by_shortcut(keys.trim()) {
         Some(c) => Ok(format!("{}\n    {}\n", format_command(c), c.tooltip())),
         None => Err(CliError::Command(format!(
@@ -285,20 +319,36 @@ fn status() -> String {
             "objects, expressions, transactions, undo, recompute",
         ),
         (
+            "pxp-platform",
+            "file locks, durable atomic file replacement",
+        ),
+        (
+            "pxp-format",
+            ".pxp (SQLite): save, open, recovery journal, backups, migrations",
+        ),
+        (
             "pxp-kernel",
-            "kernel trait and OpResult/TopoHistory contracts (no backend yet)",
+            "kernel trait, OpResult/TopoHistory contracts, bake-off harness",
+        ),
+        (
+            "pxp-kernel-native",
+            "SolidCraft kernel backend: primitives, booleans, history, hash",
         ),
         ("pxp-appkit", "Application trait, commands, registry"),
-        ("pxp-app-*", "six applications registered; commands planned"),
+        (
+            "pxp-app-modeling",
+            "datum CSYS and primitives regenerated through the kernel",
+        ),
+        (
+            "pxp-app-*",
+            "five more applications registered; commands planned",
+        ),
         (
             "pxp-cli",
             "this tool (MCP server and journaling planned, 0I)",
         ),
     ];
-    let planned: [(&str, u8); 25] = [
-        ("pxp-platform", pxp_platform::PLANNED_STAGE),
-        ("pxp-format", pxp_format::PLANNED_STAGE),
-        ("pxp-kernel-native", pxp_kernel_native::PLANNED_STAGE),
+    let planned: [(&str, u8); 22] = [
         ("pxp-kernel-occt", pxp_kernel_occt::PLANNED_STAGE),
         ("pxp-sketch", pxp_sketch::PLANNED_STAGE),
         ("pxp-tess", pxp_tess::PLANNED_STAGE),
@@ -322,7 +372,7 @@ fn status() -> String {
         ("pxp-pointcloud", pxp_pointcloud::PLANNED_STAGE),
         ("pxp-app (GUI)", 0),
     ];
-    let mut out = String::from("Implemented (Stage 0, session 1):\n");
+    let mut out = String::from("Implemented (Stage 0, sessions 1-2):\n");
     for (name, what) in implemented {
         let _ = writeln!(out, "  {name:<20} {what}");
     }

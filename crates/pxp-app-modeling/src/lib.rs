@@ -3,11 +3,14 @@
 //!
 //! Sketches, curves, datums, parametric solid and sheet features, synchronous modeling, holes and threads, analysis, assemblies, display and layers.
 //!
-//! **Status:** registered with the application registry so its ribbon
-//! tabs, navigators and commands appear (greyed, with the tooltip "Planned
-//! for Stage N.") and switching to it works with the part still open. Its
-//! first real commands arrive in Stage 1; nothing here is a stub
-//! that pretends to work.
+//! **Status (Stage 0):** the datum CSYS and the four primitives (block,
+//! cylinder, cone, sphere) are real features: created in a transaction
+//! ([`primitives`]), regenerated through the kernel trait with an immediate
+//! update policy, and stored with their exact B-rep and geometry hash. They
+//! exist to prove the pipeline end to end; every other command is listed
+//! greyed with the tooltip "Planned for Stage N." until it works. Nothing
+//! here is a stub that pretends to work: without a connected kernel the
+//! primitives report "no geometry kernel is connected" and stay greyed.
 //!
 //! ## Responsibility
 //!
@@ -17,15 +20,26 @@
 //!
 //! ## Data flow
 //!
-//! Registered by the shell into `pxp_appkit::AppRegistry`; receives change
-//! sets through `on_upstream_change`; regenerates its kinds through
-//! `Application::recompute` once implemented.
+//! Registered by the shell into `pxp_appkit::AppRegistry`, with the
+//! `pxp_kernel::KernelHost` the shell chose ([`Modeling::with_kernel`]);
+//! receives change sets through `on_upstream_change`; regenerates primitives
+//! through `Application::recompute`, which the registry calls from the
+//! document's parallel recompute.
+//!
+//! ```text
+//! create_block (Tx) ─► expressions p0..p2 + modeling.block (out of date)
+//! Document::recompute ─► AppRegistry ─► Modeling::recompute ─► KernelHost::op(block)
+//!                    ◄── geometry_hash, kernel, payload = stored exact B-rep
+//! ```
 //!
 //! ## Invariants
 //!
 //! - [`APP_ID`] and every kind name are persisted in files and never change.
-//! - Intended update policy once implemented: Immediate: features recompute as soon as their inputs change (master prompt associativity rules). Until then the
-//!   safe default (manual, refuse to regenerate) applies.
+//! - Primitives and the datum CSYS have the immediate update policy
+//!   (master prompt associativity rules); kinds not implemented yet keep
+//!   the safe default (manual, refuse to regenerate).
+//! - Recompute is a pure function of the snapshot: kernel shapes are
+//!   released before it returns.
 //!
 //! ## Must never
 //!
@@ -34,21 +48,26 @@
 //! - Copy Siemens icons, help text or trademarks.
 #![forbid(unsafe_code)]
 
+pub mod primitives;
+
 use pxp_appkit::{
     AppId, Application, ChangeCtx, ChangeSet, CommandSpec, CommandStatus, ObjectKind,
-    RibbonPlacement, UiContext,
+    RecomputeOutput, RibbonPlacement, UiContext, UpdatePolicy,
 };
+use pxp_doc::{Object, Snapshot};
+use pxp_kernel::KernelHost;
+use std::sync::Arc;
 
 /// Stable application ID persisted in `.pxp` files.
 pub const APP_ID: AppId = AppId::from_static("pxp.modeling");
 
 /// Object kinds whose schema this application owns.
 pub static KINDS: [ObjectKind; 18] = [
-    ObjectKind::from_static("modeling.datum_csys"),
-    ObjectKind::from_static("modeling.block"),
-    ObjectKind::from_static("modeling.cylinder"),
-    ObjectKind::from_static("modeling.cone"),
-    ObjectKind::from_static("modeling.sphere"),
+    primitives::DATUM_CSYS,
+    primitives::BLOCK,
+    primitives::CYLINDER,
+    primitives::CONE,
+    primitives::SPHERE,
     ObjectKind::from_static("modeling.sketch"),
     ObjectKind::from_static("modeling.extrude"),
     ObjectKind::from_static("modeling.revolve"),
@@ -354,9 +373,44 @@ const COMMANDS: &[CommandRow] = &[
     ),
 ];
 
+/// Commands that work once a geometry kernel is connected.
+const PRIMITIVE_COMMANDS: [&str; 5] = [
+    "modeling.datum_csys",
+    "modeling.block",
+    "modeling.cylinder",
+    "modeling.cone",
+    "modeling.sphere",
+];
+
 /// The Modeling application.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Modeling;
+#[derive(Debug, Default, Clone)]
+pub struct Modeling {
+    kernel: Option<Arc<KernelHost>>,
+}
+
+impl Modeling {
+    /// Modeling without a geometry kernel: everything is listed, nothing
+    /// that needs geometry is available.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { kernel: None }
+    }
+
+    /// Modeling regenerating geometry through `kernel` (the shell chooses
+    /// the backend; this crate never names one).
+    #[must_use]
+    pub fn with_kernel(kernel: Arc<KernelHost>) -> Self {
+        Self {
+            kernel: Some(kernel),
+        }
+    }
+
+    /// The connected kernel, if any.
+    #[must_use]
+    pub fn kernel(&self) -> Option<&KernelHost> {
+        self.kernel.as_deref()
+    }
+}
 
 impl Application for Modeling {
     fn id(&self) -> AppId {
@@ -368,7 +422,7 @@ impl Application for Modeling {
     }
 
     fn planned_stage(&self) -> u8 {
-        1
+        0
     }
 
     fn owned_kinds(&self) -> &[ObjectKind] {
@@ -389,10 +443,33 @@ impl Application for Modeling {
                     },
                     shortcut: shortcut.map(Into::into),
                     description: description.into(),
-                    status: CommandStatus::Planned { stage },
+                    status: if self.kernel.is_some() && PRIMITIVE_COMMANDS.contains(&id) {
+                        CommandStatus::Available
+                    } else {
+                        CommandStatus::Planned { stage }
+                    },
                 },
             )
             .collect()
+    }
+
+    fn update_policy(&self, kind: &ObjectKind) -> UpdatePolicy {
+        if primitives::is_primitive_kind(kind) {
+            UpdatePolicy::Immediate
+        } else {
+            UpdatePolicy::Manual
+        }
+    }
+
+    fn recompute(&self, inputs: &Snapshot, object: &Object) -> Result<RecomputeOutput, String> {
+        if primitives::is_primitive_kind(&object.kind) {
+            primitives::recompute(self.kernel(), inputs, object)
+        } else {
+            Err(format!(
+                "'{}' is planned for a later stage and cannot be regenerated yet",
+                object.kind
+            ))
+        }
     }
 
     fn on_upstream_change(&self, _ctx: &mut ChangeCtx, _change: &ChangeSet) {
@@ -425,8 +502,8 @@ mod tests {
     }
 
     #[test]
-    fn every_command_is_honestly_planned() {
-        let cmds = Modeling.commands();
+    fn every_command_is_honestly_planned_without_a_kernel() {
+        let cmds = Modeling::new().commands();
         assert!(!cmds.is_empty());
         for c in &cmds {
             assert!(c.id.starts_with(concat!("modeling", ".")), "{}", c.id);
@@ -443,10 +520,10 @@ mod tests {
     #[test]
     fn activation_sets_ribbon_and_navigators() {
         let mut ui = UiContext::default();
-        Modeling.activate(&mut ui);
+        Modeling::new().activate(&mut ui);
         assert_eq!(ui.ribbon_tabs, RIBBON_TABS);
         assert_eq!(ui.navigators, NAVIGATORS);
-        Modeling.deactivate(&mut ui);
+        Modeling::new().deactivate(&mut ui);
         assert!(ui.ribbon_tabs.is_empty());
     }
 }

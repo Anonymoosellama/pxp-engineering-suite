@@ -26,7 +26,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let mut registry = AppRegistry::new();
     let apps: [Box<dyn Application>; 6] = [
-        Box::new(pxp_app_modeling::Modeling),
+        Box::new(pxp_app_modeling::Modeling::new()),
         Box::new(pxp_app_drafting::Drafting),
         Box::new(pxp_app_manufacturing::Manufacturing),
         Box::new(pxp_app_postgen::PostGeneration),
@@ -53,7 +53,7 @@ fn main() -> ExitCode {
         pxp_ui::PLANNED_STAGE
     );
     println!(
-        "Use `pxp-cli` to explore what exists: pxp-cli status | apps | commands | find | eval."
+        "Use `pxp-cli` to explore what exists: pxp-cli status | apps | commands | find | eval | part | bakeoff."
     );
     ExitCode::from(2)
 }
