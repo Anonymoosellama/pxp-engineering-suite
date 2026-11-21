@@ -117,6 +117,18 @@ impl GeometryKernel for MockKernel {
     fn geometry_hash(&self, shape: ShapeHandle, _: Length) -> Result<u64, KernelError> {
         Ok(shape.id)
     }
+    fn export_native(&self, _: ShapeHandle) -> Result<Vec<u8>, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "export_native",
+            reason: "mock".into(),
+        })
+    }
+    fn import_native(&self, _: &[u8]) -> Result<ShapeHandle, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "import_native",
+            reason: "mock".into(),
+        })
+    }
     fn release(&self, _: ShapeHandle) {}
 }
 
@@ -212,4 +224,26 @@ fn check_complete_ignores_shells_and_bodies() {
     };
     assert!(h.check_complete([body]).is_ok());
     assert!(h.check_complete([MockKernel::face(0)]).is_err());
+}
+
+#[test]
+fn stored_shape_envelope_round_trips_and_rejects_damage() {
+    let bytes = encode_stored_shape(BackendId("solidcraft"), b"native-brep").unwrap();
+    let back = decode_stored_shape(&bytes).unwrap();
+    assert_eq!(back.backend, "solidcraft");
+    assert_eq!(back.native, b"native-brep");
+    // Every truncation is refused, never misread.
+    for cut in 0..bytes.len() {
+        assert!(decode_stored_shape(&bytes[..cut]).is_err(), "cut at {cut}");
+    }
+    let mut longer = bytes.clone();
+    longer.push(0);
+    assert!(decode_stored_shape(&longer).is_err());
+    let mut newer = bytes;
+    newer[4] = 2;
+    assert!(matches!(
+        decode_stored_shape(&newer),
+        Err(KernelError::InvalidInput(m)) if m.contains("version 2")
+    ));
+    assert!(encode_stored_shape(BackendId(&"x".repeat(256).leak()[..]), b"").is_err());
 }

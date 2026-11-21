@@ -13,11 +13,15 @@
 //!   [`TopoId`], [`TopoHistory`], [`KernelWarning`], [`KernelError`],
 //!   [`OpResult`], [`MassProperties`], primitive specifications.
 //! - The [`GeometryKernel`] trait that backends implement (Stage 0
-//!   bake-off: SolidCore in-process via `pxp-kernel-native`, OCCT in a worker
-//!   process via `pxp-kernel-occt`; ADR-0004 records the winner).
+//!   bake-off: SolidCraft's kernel, built on SolidCore, in-process via
+//!   `pxp-kernel-native`; OCCT in a worker process via `pxp-kernel-occt`;
+//!   ADR-0004 records the winner).
 //! - [`KernelHost`]: the single entry point applications use. In-process
 //!   hosting with panic isolation exists now; out-of-process worker hosting
-//!   for native backends arrives with sub-stage 0F.
+//!   for native (C++) backends arrives with the OCCT half of sub-stage 0F.
+//! - The stored-shape envelope ([`encode_stored_shape`]) documents use to
+//!   keep a backend's exact B-rep, and [`DEFAULT_HASH_RESOLUTION`].
+//! - The backend-neutral kernel bake-off harness and corpus ([`bakeoff`]).
 //!
 //! ## Why the history map matters
 //!
@@ -151,6 +155,12 @@ pub enum Relation {
 }
 
 /// One row of a history map.
+///
+/// A backend whose kernel reports provenance for faces but not for every
+/// edge and vertex may derive the missing records from adjacency: an edge
+/// new to the operation from the faces it separates, a vertex from the faces
+/// around it. Such a backend says so in its crate documentation
+/// (`docs/design/kernel-contract.md`, "Derived records").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryRecord {
     /// The output entity.
@@ -278,6 +288,13 @@ pub enum KernelError {
         /// Input entities involved, if known.
         entities: Vec<TopoId>,
     },
+    /// The operation succeeded but left no material (a subtract whose tool
+    /// swallows the target, an intersect of bodies that do not overlap). NX
+    /// reports this as an error rather than creating an empty body.
+    EmptyResult {
+        /// Operation name.
+        op: &'static str,
+    },
     /// The handle does not belong to this backend or was released.
     UnknownShape(ShapeHandle),
     /// A backend violated the history contract.
@@ -296,6 +313,7 @@ impl fmt::Display for KernelError {
             }
             Self::InvalidInput(m) => write!(f, "invalid input: {m}"),
             Self::GeometryFailure { op, reason, .. } => write!(f, "{op} failed: {reason}"),
+            Self::EmptyResult { op } => write!(f, "{op} left no material"),
             Self::UnknownShape(h) => {
                 write!(f, "unknown shape {} from backend {}", h.id, h.backend.0)
             }
@@ -322,6 +340,25 @@ pub enum BooleanOp {
     /// Common volume.
     Intersect,
 }
+
+/// Topology counts with adjacent pieces of one surface (or curve) merged:
+/// a full cylinder side counts as one face whether a kernel stores it as one
+/// periodic face or two halves. Kernels differ in where they split, so these
+/// are the counts the bake-off compares across backends (SolidCraft's
+/// kernel-case rig counts the same way).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct MergedCounts {
+    /// Faces, adjacent faces on one surface merged.
+    pub faces: usize,
+    /// Edges, edges between merged faces dropped and split edges joined.
+    pub edges: usize,
+    /// Vertices that remain after merging.
+    pub vertices: usize,
+}
+
+/// Resolution at which documents store geometry hashes (one nanometre):
+/// far below any modeling tolerance, far above floating-point noise.
+pub const DEFAULT_HASH_RESOLUTION: Length = Length::from_mm(1e-6);
 
 /// Mass properties at unit density. Multiply by a material density
 /// ([`pxp_units::Density`]) for mass.
@@ -575,8 +612,107 @@ pub trait GeometryKernel: Send + Sync {
     /// [`KernelError::UnknownShape`].
     fn geometry_hash(&self, shape: ShapeHandle, resolution: Length) -> Result<u64, KernelError>;
 
+    /// Face, edge and vertex counts with adjacent pieces of one surface
+    /// merged ([`MergedCounts`]).
+    ///
+    /// # Errors
+    /// [`KernelError::UnknownShape`]; the default refuses with
+    /// [`KernelError::Unsupported`].
+    fn merged_counts(&self, shape: ShapeHandle) -> Result<MergedCounts, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "merged_counts",
+            reason: format!("backend cannot merge topology of shape {}", shape.id),
+        })
+    }
+
+    /// The shape's exact B-rep in this backend's own versioned format, for
+    /// storage in a document (wrap it with [`encode_stored_shape`] so the
+    /// file records which backend wrote it). Identical shapes give identical
+    /// bytes (determinism rule).
+    ///
+    /// # Errors
+    /// [`KernelError::UnknownShape`], or [`KernelError::Unsupported`] for a
+    /// backend that cannot serialise.
+    fn export_native(&self, shape: ShapeHandle) -> Result<Vec<u8>, KernelError>;
+
+    /// Restores a shape from bytes made by [`GeometryKernel::export_native`]
+    /// of the same backend. The restored shape has the same topology order
+    /// and geometry hash as the exported one. No history: it is the same
+    /// shape, not the result of an operation.
+    ///
+    /// # Errors
+    /// [`KernelError::InvalidInput`] for bytes this backend cannot read.
+    fn import_native(&self, bytes: &[u8]) -> Result<ShapeHandle, KernelError>;
+
     /// Frees a shape. Releasing an unknown handle is a no-op.
     fn release(&self, shape: ShapeHandle);
+}
+
+/// Magic bytes that open a stored shape.
+const STORED_SHAPE_MAGIC: &[u8; 4] = b"PXPB";
+/// Version of the stored-shape envelope (not of the backend's own format,
+/// which the backend versions itself).
+const STORED_SHAPE_VERSION: u8 = 1;
+
+/// An exact B-rep as a document stores it: which backend wrote it and that
+/// backend's native bytes (from [`GeometryKernel::export_native`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredShape<'a> {
+    /// The writing backend's [`BackendId`] string.
+    pub backend: &'a str,
+    /// The backend's native bytes.
+    pub native: &'a [u8],
+}
+
+/// Wraps native B-rep bytes in the stored-shape envelope:
+/// `"PXPB"`, version (u8), backend id length (u8), backend id (UTF-8),
+/// native length (u64 little-endian), native bytes.
+///
+/// # Errors
+/// [`KernelError::InvalidInput`] if the backend id is longer than 255 bytes.
+pub fn encode_stored_shape(backend: BackendId, native: &[u8]) -> Result<Vec<u8>, KernelError> {
+    let id = backend.0.as_bytes();
+    let id_len = u8::try_from(id.len())
+        .map_err(|_| KernelError::InvalidInput("backend id longer than 255 bytes".into()))?;
+    let mut out = Vec::with_capacity(4 + 2 + id.len() + 8 + native.len());
+    out.extend_from_slice(STORED_SHAPE_MAGIC);
+    out.push(STORED_SHAPE_VERSION);
+    out.push(id_len);
+    out.extend_from_slice(id);
+    out.extend_from_slice(&(native.len() as u64).to_le_bytes());
+    out.extend_from_slice(native);
+    Ok(out)
+}
+
+/// Reads the envelope written by [`encode_stored_shape`].
+///
+/// # Errors
+/// [`KernelError::InvalidInput`] for bytes that are not a stored shape, a
+/// newer envelope version, or a truncated or over-long buffer.
+pub fn decode_stored_shape(bytes: &[u8]) -> Result<StoredShape<'_>, KernelError> {
+    let bad = |why: &str| KernelError::InvalidInput(format!("not a stored shape: {why}"));
+    let rest = bytes
+        .strip_prefix(STORED_SHAPE_MAGIC.as_slice())
+        .ok_or_else(|| bad("missing PXPB header"))?;
+    let (&version, rest) = rest.split_first().ok_or_else(|| bad("truncated"))?;
+    if version != STORED_SHAPE_VERSION {
+        return Err(bad(&format!(
+            "envelope version {version}, this build reads {STORED_SHAPE_VERSION}"
+        )));
+    }
+    let (&id_len, rest) = rest.split_first().ok_or_else(|| bad("truncated"))?;
+    let (id, rest) = rest
+        .split_at_checked(usize::from(id_len))
+        .ok_or_else(|| bad("truncated backend id"))?;
+    let backend = std::str::from_utf8(id).map_err(|_| bad("backend id is not UTF-8"))?;
+    let (len, native) = rest
+        .split_first_chunk::<8>()
+        .ok_or_else(|| bad("truncated length"))?;
+    let len = usize::try_from(u64::from_le_bytes(*len)).map_err(|_| bad("length overflows"))?;
+    if native.len() != len {
+        return Err(bad("length does not match the data"));
+    }
+    Ok(StoredShape { backend, native })
 }
 
 /// The single entry point applications use for geometry.
@@ -586,7 +722,8 @@ pub trait GeometryKernel: Send + Sync {
 /// document transaction rolls back. Native backends such as OCCT can crash
 /// the process in ways `catch_unwind` cannot stop; for them, sub-stage 0F adds
 /// out-of-process hosting with automatic worker restart and transaction
-/// replay. Until then no native backend is wired in.
+/// replay. The pure-Rust backend (`pxp-kernel-native`, SolidCraft's kernel)
+/// is safe Rust and runs in-process.
 pub struct KernelHost {
     backend: Box<dyn GeometryKernel>,
 }
@@ -653,6 +790,8 @@ impl KernelHost {
         Ok(result)
     }
 }
+
+pub mod bakeoff;
 
 #[cfg(test)]
 mod tests;
