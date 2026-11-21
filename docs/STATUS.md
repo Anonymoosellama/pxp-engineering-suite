@@ -110,7 +110,7 @@ results for the pushed commits are recorded under "CI" below.
 | Licence: SolidCore (Apache-2.0 only) `deny.toml` exceptions; LGPL-3.0 conveyance of binaries linking it recorded | `deny.toml`; ADR-0001 table |
 | 0G Modeling primitives: datum CSYS, block, cylinder, cone, sphere with expression parameters (`p0`, `p1`, …), immediate update policy, regenerated through `KernelHost`, stored with exact B-rep and geometry hash | `pxp-app-modeling::primitives`; tests below |
 | 0G headless checklist "new part from mm and inch templates; create a block; save, close, reopen; geometry hash identical" | `pxp-cli part new/block/…/info/verify`; integration test `crates/pxp-cli/tests/part_roundtrip.rs` (3 tests: mm, inch, all primitives, refusal leaves the file untouched) |
-| Cross-OS determinism check | CI: every target prints hashes and fingerprints; job `determinism` (`tools/ci/compare_hashes.py`) fails on any difference not in `tools/ci/known-cross-os-differences.txt`. First result: Linux x86_64 = aarch64; macOS arm64 differs in 1 of 66 cases (finding, listed) |
+| Cross-OS determinism check | CI: every target prints hashes and fingerprints; job `determinism` (`tools/ci/compare_hashes.py`) fails on any difference not in `tools/ci/known-cross-os-differences.txt`. Result (run 44938406915): Linux x86_64/aarch64 and Windows x64/ARM64 identical on all 66 cases; both macOS targets differ in 1 case (3460: a kernel finding, listed) |
 | Docs | `docs/design/kernel-contract.md` (derived records, backends, harness), `docs/design/file-format.md`, ADR-0001/0003/0004, README |
 
 Workspace total: **181 tests passing, 0 failing**; clippy (pedantic,
@@ -126,9 +126,15 @@ Workspace total: **181 tests passing, 0 failing**; clippy (pedantic,
   and macOS arm64 (tests, rustdoc and the bake-off step), plus policy,
   rustfmt, cargo-deny (SolidCore licence exceptions accepted) and fuzz.
   Windows x64 and ARM64 failed one test: the lock holder's note cannot be
-  read on Windows while the lock is held (mandatory locks). Fixed in the
-  next commit. Earlier Windows failure (save could not flush the temporary
+  read on Windows while the lock is held (mandatory locks). Fixed in
+  `63aae19`. Earlier Windows failure (save could not flush the temporary
   file through a read-only handle) fixed in `6fa3b64`.
+- Run 44938406915 (commit `63aae19`): **clippy, tests, rustdoc and the
+  bake-off green on all six targets** (Linux x86_64/aarch64, Windows
+  x64/ARM64, macOS arm64/x86_64), plus policy, rustfmt, cargo-deny and
+  fuzz. The `determinism` job failed only because macOS x86_64 showed the
+  same case-3460 difference as macOS arm64 and was not yet in the known
+  list; added in the next commit.
 - Final status of the last push: recorded below when it completes.
 
 ## Done (session 1, 2026-11-20)

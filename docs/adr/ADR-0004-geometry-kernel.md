@@ -58,7 +58,7 @@ Full report: `docs/reports/kernel-bakeoff-2026-11-21-native.md`.
 | Incomplete histories | 0 (edges new to an operation and all vertices derived from adjacency) | session 3 |
 | Time per case, median / p95 (opt-level 1, 2 vCPU) | 163 ms / 1.35 s | session 3 |
 | Same hash on repeated runs | 67 / 67 | session 3 |
-| Cross-OS hashes (66 cases) | Linux x86_64 = Linux aarch64; macOS arm64 differs in 1 case (3460); Windows pending | session 3 |
+| Cross-OS hashes (66 cases, six targets) | 65 / 66 identical everywhere; case 3460 differs on both macOS targets only (same counts, volume, area) | session 3 |
 | Blends, STEP round trip | not measurable before Stage 1 | not measurable before Stage 1 |
 
 Early observations, not yet a decision: SolidCraft gave no wrong answer on

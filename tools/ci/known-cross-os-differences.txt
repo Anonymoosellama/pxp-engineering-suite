@@ -8,4 +8,5 @@
 # as the hashes agree again (the job warns when an entry is no longer needed).
 #
 # Format: <case id> <target>   # evidence
-solidcraft/booleans/3460-cut-by-lid-with-coincident-walls-and-half-moon-tabs macos-15   # CI run 44936634115 (commit 6fa3b64): passes on every target (volume within 5e-4) but its hash differs on macOS arm64 only; Linux x86_64 and aarch64 agree. Cause under investigation (session 3) with `bakeoff --format details`.
+solidcraft/booleans/3460-cut-by-lid-with-coincident-walls-and-half-moon-tabs macos-15         # CI runs 44936634115, 44938406915: passes everywhere; same counts (v60 e90 f43/41 s2), volume and area to 12 digits on every target, but the hash differs on both macOS targets (which agree with each other); Linux x86_64/aarch64 and Windows x64 agree. Points at Apple's maths library and a vertex coordinate, centroid or entity order. Session 3 investigates.
+solidcraft/booleans/3460-cut-by-lid-with-coincident-walls-and-half-moon-tabs macos-15-intel   # same as above

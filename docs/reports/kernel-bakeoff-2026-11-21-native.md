@@ -29,7 +29,7 @@ Timings below come from an optimised build (`opt-level = 1`, see
 | History completeness | Every operation passed `KernelHost::op`'s `check_complete`: 0 incomplete histories. Edges new to an operation and all vertices use the adapter's derived records (see "Findings") |
 | Speed (time per case, all steps) | median 163 ms, 95th percentile 1.35 s; slowest: the level-3 Menger sponge (560 primitives, 540 subtracts, then one join of 20 bodies) at 178 s |
 | In-process determinism | 67 of 67 cases gave the same geometry hash on both runs; debug and optimised builds give identical hashes |
-| Cross-OS determinism | First CI comparison (run 44936634115, 66 cases, slow case excluded): Linux x86_64, Linux aarch64 and this sandbox identical; **macOS arm64 differs in 1 case** (3460, which still passes there); Windows x64/ARM64 not yet compared (their test step failed on an unrelated Windows file-flush bug, since fixed) |
+| Cross-OS determinism | CI run 44938406915, 66 cases (slow case excluded), six targets: Linux x86_64, Linux aarch64, Windows x64, Windows ARM64 and this sandbox give identical hashes for all 66; **both macOS targets differ in 1 case** (3460, which still passes there and agrees between the two Macs): 65 / 66 identical on every target |
 | Blend success rate | Not measured: blends arrive in Stage 1 (the kernel trait has no blend operation yet) |
 | STEP round-trip fidelity | Not measured: STEP import/export arrives with `pxp-io-step` |
 
@@ -53,15 +53,16 @@ Timings below come from an optimised build (`opt-level = 1`, see
    boolean keeps is matched back to its input vertex.
 4. **One cross-OS difference.** Case
    `solidcraft/booleans/3460-cut-by-lid-with-coincident-walls-and-half-moon-tabs`
-   (coincident walls) gives a different geometry hash on macOS arm64 than on
-   Linux x86_64 and aarch64, while its volume passes on all three. Linux
-   aarch64 agrees with x86_64, so the cause is not the processor
-   architecture; the likeliest is a platform maths-library difference tipping
-   a tolerance decision in the kernel, or a value sitting on a rounding
-   boundary of the hash. CI now prints each case's fingerprint (raw and
-   merged counts, volume, area) to locate it; the pair is listed in
-   `tools/ci/known-cross-os-differences.txt` so any *new* difference still
-   fails CI.
+   (coincident walls) gives a different geometry hash on macOS (arm64 and
+   x86_64 alike) than on Linux and Windows (all four agree). Entity counts,
+   merged face count, shells, volume and area agree to 12 significant
+   digits on every target. Since the two Mac architectures agree with each
+   other and Linux aarch64 agrees with x86_64, the cause is the platform
+   maths library, not the processor; what differs is a vertex coordinate,
+   the centroid or the entity order. CI prints each case's fingerprint
+   (now with centroids) to narrow it down in session 3; the pair is listed
+   in `tools/ci/known-cross-os-differences.txt` so any *new* difference
+   still fails CI.
 5. **Slow case.** The level-3 Menger sponge join takes 178 s (SolidCraft's
    rig allows it 1200 s). It is skipped in routine runs and CI
    (`--include-slow` runs it).

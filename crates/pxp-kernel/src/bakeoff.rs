@@ -204,7 +204,8 @@ pub struct Outcome {
     /// Every repeat gave the same status and hash.
     pub deterministic: bool,
     /// Diagnostic fingerprint of the first run (raw entity counts, merged
-    /// faces, shells, volume and area to 12 significant digits), for
+    /// faces, shells, volume, area and summed centroids to 12 significant
+    /// digits), for
     /// finding where two platforms' hashes part ways.
     pub fingerprint: Option<String>,
 }
@@ -240,6 +241,8 @@ impl Drop for Bodies<'_> {
 struct Final {
     volume: f64,
     area: f64,
+    /// Sum of the bodies' centroids (diagnostic only).
+    centroid: [f64; 3],
     vertices: usize,
     edges: usize,
     /// Faces as the kernel stores them.
@@ -307,6 +310,7 @@ fn run_steps(host: &KernelHost, steps: &[Step]) -> Result<Final, KernelError> {
     let mut fin = Final {
         volume: 0.0,
         area: 0.0,
+        centroid: [0.0; 3],
         vertices: 0,
         edges: 0,
         faces: 0,
@@ -319,6 +323,13 @@ fn run_steps(host: &KernelHost, steps: &[Step]) -> Result<Final, KernelError> {
         let m = host.call(|k| k.mass_properties(*s))?;
         fin.volume += m.volume.mm3();
         fin.area += m.area.mm2();
+        for (sum, c) in fin
+            .centroid
+            .iter_mut()
+            .zip([m.centroid.x, m.centroid.y, m.centroid.z])
+        {
+            *sum += c;
+        }
         let topo = host.call(|k| k.topology(*s))?;
         let count = |kind| topo.iter().filter(|t| t.kind == kind).count();
         fin.vertices += count(TopoKind::Vertex);
@@ -423,7 +434,7 @@ pub fn run_case(host: &KernelHost, case: &Case, repeats: usize) -> Outcome {
     let hash = first.as_ref().ok().map(|f| f.hash);
     let fingerprint = first.as_ref().ok().map(|f| {
         format!(
-            "v{} e{} f{}/{} s{} V={:.11e} A={:.11e}",
+            "v{} e{} f{}/{} s{} V={:.11e} A={:.11e} C=({:.11e},{:.11e},{:.11e})",
             f.vertices,
             f.edges,
             f.faces,
@@ -431,7 +442,10 @@ pub fn run_case(host: &KernelHost, case: &Case, repeats: usize) -> Outcome {
                 .map_or_else(|| "?".to_owned(), |n| n.to_string()),
             f.shells,
             f.volume,
-            f.area
+            f.area,
+            f.centroid[0],
+            f.centroid[1],
+            f.centroid[2]
         )
     });
     let deterministic = (1..repeats).all(|_| {
