@@ -6,7 +6,8 @@
 # Not yet present, added as their crates land (never as empty jobs):
 #   - criterion benchmarks   -> with the performance budgets (0J)
 #   - packaging (MSI/MSIX, DMG, AppImage, Flatpak, .deb) -> with pxp-app (0H/0J)
-#   - nightly long fuzzing and the full kernel corpus -> .github/workflows/nightly.yml (0F)
+#   - nightly long fuzzing and the slow kernel cases (`bakeoff --include-slow`)
+#     -> .github/workflows/nightly.yml
 
 name: ci
 
@@ -91,3 +92,35 @@ jobs:
         run: cargo doc --workspace --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
+      # Kernel bake-off corpus: one geometry hash per case, compared across
+      # every OS by the `determinism` job (master prompt: recompute is
+      # deterministic on every OS, and CI tests it).
+      - name: Kernel bake-off hashes
+        shell: bash
+        run: |
+          cargo run -p pxp-cli --locked -- bakeoff --repeat 1 --format hashes --quiet > bakeoff-hashes.txt
+          cat bakeoff-hashes.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bakeoff-hashes-${{ matrix.os }}
+          path: bakeoff-hashes.txt
+
+  determinism:
+    name: cross-OS geometry hashes identical
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bakeoff-hashes-*
+      - name: Compare every OS with Linux x86_64
+        shell: bash
+        run: |
+          status=0
+          for f in bakeoff-hashes-*/bakeoff-hashes.txt; do
+            if ! diff -u bakeoff-hashes-ubuntu-24.04/bakeoff-hashes.txt "$f"; then
+              echo "::error::$f differs from Linux x86_64"
+              status=1
+            fi
+          done
+          exit $status
