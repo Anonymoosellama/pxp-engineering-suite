@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 [package]
 name = "pxp-kernel-native"
-description = "Adapter that runs a pure-Rust B-rep kernel (bake-off candidate: SolidCore) behind the pxp-kernel trait."
+description = "Runs SolidCraft's pure-Rust B-rep kernel (built on SolidCore) behind the pxp-kernel trait."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,3 +16,5 @@ workspace = true
 pxp-kernel = { workspace = true }
 pxp-math = { workspace = true }
 pxp-units = { workspace = true }
+solidcraft-kernel = { workspace = true }
+solidcore-record = { workspace = true }

@@ -34,7 +34,16 @@ allow = [
 # via MIT. An Apache-2.0-ONLY crate must be listed here, and recorded in
 # ADR-0001, because linking it means binaries are conveyed under LGPL-3.0.
 exceptions = [
-    # { allow = ["Apache-2.0"], crate = "solidcore" },  # pending ADR-0004
+    # SolidCore, the B-rep kernel under SolidCraft's kernel (pxp-kernel-native,
+    # the ADR-0004 bake-off candidate), is Apache-2.0 only. Binaries that link
+    # it are conveyed under LGPL-3.0 (ADR-0001, "Registered Apache-2.0-only
+    # exceptions"). All six crates come from one pinned git revision.
+    { allow = ["Apache-2.0"], crate = "solidcore" },
+    { allow = ["Apache-2.0"], crate = "solidcore-convert" },
+    { allow = ["Apache-2.0"], crate = "solidcore-ops" },
+    { allow = ["Apache-2.0"], crate = "solidcore-record" },
+    { allow = ["Apache-2.0"], crate = "solidcore-step" },
+    { allow = ["Apache-2.0"], crate = "solidcore-tess" },
 ]
 
 [licenses.private]
@@ -47,9 +56,14 @@ wildcards = "deny"
 # Internal path dependencies carry no version; that is fine for unpublished
 # workspace crates.
 allow-wildcard-paths = true
+skip = [
+    { crate = "hashbrown@0.16.1", reason = "spade (the triangulator in SolidCraft's tessellator) needs 0.16 while rusqlite's hashlink needs 0.17; both MIT OR Apache-2.0. Drop when spade moves on." },
+]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# SolidCraft's kernel is not on crates.io; the workspace pins one commit
+# (Cargo.toml, ADR-0004).
+allow-git = ["https://github.com/tangency-labs/solidcraft"]

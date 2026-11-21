@@ -66,8 +66,11 @@ list. That forces a conscious decision, recorded in this ADR, each time a
 dependency moves our binaries to LGPL-3.0 conveyance. GPL and AGPL crates are
 always denied.
 
-Registered Apache-2.0-only exceptions: *(none yet; SolidCore will be the first
-if it wins the kernel bake-off, ADR-0004)*.
+Registered Apache-2.0-only exceptions:
+
+| Crates | Registered | Why | Consequence |
+| --- | --- | --- | --- |
+| `solidcore`, `solidcore-convert`, `solidcore-ops`, `solidcore-record`, `solidcore-step`, `solidcore-tess` (from SolidCraft's repository, pinned commit `2091b88`) | 2026-11-21, session 2 | The B-rep kernel under SolidCraft's `solidcraft-kernel`, which `pxp-kernel-native` wraps for the Stage 0 kernel bake-off (ADR-0004). | Every binary that links `pxp-kernel-native` (today `pxp-cli`; later the desktop application) is conveyed under **LGPL-3.0**. Our source files stay `LGPL-2.1-or-later`. If OCCT wins the bake-off and the native backend is dropped from shipped binaries, this exception and the LGPL-3.0 conveyance can be removed. |
 
 ## Sources
 

@@ -32,6 +32,13 @@ rusqlite = { version = "0.43", features = ["bundled", "backup"] }
 thiserror = "2"
 rayon = "1.12"
 proptest = { version = "1.12", default-features = false, features = ["std"] }
+# SolidCraft's geometry kernel, built on SolidCore (ADR-0004 bake-off
+# candidate). Not published on crates.io, so a git dependency pinned to one
+# reviewed commit; upgrade deliberately, re-running the bake-off. SolidCraft
+# crates are MIT OR Apache-2.0 (taken under MIT); the SolidCore crates are
+# Apache-2.0 only (deny.toml exceptions, LGPL-3.0 conveyance, ADR-0001).
+solidcraft-kernel = { git = "https://github.com/tangency-labs/solidcraft", rev = "2091b8828c328d5ab0a0f162dbc7a36a558aa99d" }
+solidcore-record = { git = "https://github.com/tangency-labs/solidcraft", rev = "2091b8828c328d5ab0a0f162dbc7a36a558aa99d" }
 
 # Internal crates.
 pxp-units = { path = "crates/pxp-units" }
@@ -101,4 +108,10 @@ must_use_candidate = "allow"
 
 [profile.release]
 # Debug info in release builds makes local crash reports useful (no telemetry).
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+# Dependencies (above all the 40 MB SolidCore kernel) build without full
+# debug info: it halves their compile memory and time, and line tables keep
+# backtraces readable. Our own crates keep full debug info.
 debug = "line-tables-only"
