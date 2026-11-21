@@ -9,7 +9,7 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 
 | Stage | Scope | State |
 | --- | --- | --- |
-| 0 | Foundations | **In progress** (session 1) |
+| 0 | Foundations | **In progress** (sessions 1-2) |
 | 1 | Modeling (CAD, assemblies) | Not started; gated on "Stage 0 approved" |
 | 2 | Drafting | Not started |
 | 3 | Manufacturing core | Not started |
@@ -24,9 +24,9 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0B | Foundation crates: pxp-units, pxp-math (pxp-diag, pxp-platform, pxp-compute skeletons) | Session 1 |
 | 0C | Document core pxp-doc: object store, typed unit-aware properties, expressions, dependency graph, recompute scheduler, transactions, undo/redo with memory cap, change bus, snapshots | Session 1 |
 | 0D | Contracts: pxp-kernel trait, OpResult and TopoHistory, KernelHost; Application trait and command registry; every application registered with greyed "Planned for Stage N" commands | Session 1 |
-| 0E | pxp-format: SQLite .pxp new/open/save/save as, migrations, recovery journal, backups, advisory lock, fuzz target | Blocked: needs crates.io (rusqlite) |
-| 0F | Kernel bake-off harness and 200-part corpus (SolidCore in-process, OCCT in the worker process) | Blocked: needs network for crates and corpus |
-| 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | After 0F |
+| 0E | pxp-format: SQLite .pxp new/open/save/save as, migrations, recovery journal, backups, advisory lock, fuzz target | **Done, session 2** |
+| 0F | Kernel bake-off harness and corpus; SolidCraft backend in-process; OCCT in the worker process | **Native half done, session 2** (harness, 67-case corpus, SolidCraft backend measured). OCCT worker, NIST STEP corpus, 200-part target: session 3 |
+| 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | **Done headless, session 2** (CLI and Modeling recompute). WCS and the Block dialog arrive with the shell (0H) |
 | 0H | ADR-0002 UI prototypes (egui+egui_dock vs Slint), NX-style shell, wgpu viewer | Blocked: needs crates.io |
 | 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | Partly possible now (CLI); MCP needs serde |
 | 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | Later |
@@ -93,6 +93,34 @@ in CI), the NIST STEP corpus (`nist.gov` must be added to the allowed domains),
 - CI has never run: the workflow is written but cannot be exercised from this sandbox, so "CI green on all three OSes" is not yet met for anything.
 - Snapshots copy the object map (Arc-shared objects, O(n) pointer copies per transaction). Acceptable for Stage 0 scale; replace with a persistent map once crates are available (ADR-0006).
 
+## Done (session 2, 2026-11-21)
+
+Measured locally on Linux x86_64 (2 vCPU, 7 GB) with the stable toolchain
+standing in for the pinned 1.97.0 (rustup cannot download 1.97.0 here). CI
+results for the pushed commits are recorded under "CI" below.
+
+| Item | Evidence |
+| --- | --- |
+| Housekeeping: `pxp-compute::par_map` on rayon; proptest invariants for units, maths, document undo/redo and the codec; fuzz smoke job in CI | `crates/*/tests/properties.rs`; `fuzz/`; CI job `fuzz` |
+| 0E `pxp-platform`: advisory file locks, durable atomic file replacement | tests in `pxp-platform`, `pxp-format` |
+| 0E `pxp-format`: `.pxp` on SQLite (schema v1, explicit binary codec, atomic save, 3 backups, recovery journal, lock, in-memory migrations, newer files read-only, byte-for-byte unknown kinds, `close` removes a clean journal) | 19 unit + 2 property tests; 2 cargo-fuzz targets; design note `docs/design/file-format.md`; ADR-0003 updated |
+| 0F `pxp-kernel` additions: stored-shape envelope, `export_native`/`import_native`, `merged_counts`, `EmptyResult`, `DEFAULT_HASH_RESOLUTION` | 7 contract tests |
+| 0F `pxp-kernel-native`: SolidCraft's kernel (git dependency pinned to `2091b88`): block (any CSYS), cylinder, cone (revolve), sphere, unite/subtract/intersect, topology, body kind, mass properties, geometry hash, merged counts, native B-rep I/O; complete `TopoHistory` with derived edge/vertex records | 12 conformance tests through `KernelHost::op`, all values against hand calculations |
+| 0F bake-off harness and corpus (`pxp_kernel::bakeoff`, `pxp-cli bakeoff`): 32 synthetic stress cases + 35 SolidCraft analytic cases (converter `tools/import_solidcraft_cases.py`) | **67 / 67 pass, 0 incomplete histories, 67 / 67 deterministic**; median 163 ms per case: `docs/reports/kernel-bakeoff-2026-11-21-native.md`; ADR-0004 measurements |
+| Licence: SolidCore (Apache-2.0 only) `deny.toml` exceptions; LGPL-3.0 conveyance of binaries linking it recorded | `deny.toml`; ADR-0001 table |
+| 0G Modeling primitives: datum CSYS, block, cylinder, cone, sphere with expression parameters (`p0`, `p1`, …), immediate update policy, regenerated through `KernelHost`, stored with exact B-rep and geometry hash | `pxp-app-modeling::primitives`; tests below |
+| 0G headless checklist "new part from mm and inch templates; create a block; save, close, reopen; geometry hash identical" | `pxp-cli part new/block/…/info/verify`; integration test `crates/pxp-cli/tests/part_roundtrip.rs` (3 tests: mm, inch, all primitives, refusal leaves the file untouched) |
+| Cross-OS determinism check | CI: every target prints the corpus hashes; job `determinism` diffs them |
+| Docs | `docs/design/kernel-contract.md` (derived records, backends, harness), `docs/design/file-format.md`, ADR-0001/0003/0004, README |
+
+Workspace total: **181 tests passing, 0 failing**; clippy (pedantic,
+`-D warnings`) and rustdoc (`-D warnings`) clean; `tools/check_repo.py`
+0 problems; `cargo fmt --check` clean.
+
+### CI
+
+Pending for the session 2 push (see "In progress").
+
 ## Done (session 1, 2026-11-20)
 
 Measured locally on Linux x86_64 with Rust 1.97.0, then confirmed by **CI run
@@ -125,23 +153,29 @@ clean.
 
 ## In progress
 
-- Nothing half-finished in the tree. Stage 0 overall remains in progress:
-  0E to 0J are outstanding (see the table above).
+- CI for the session 2 push (first build of SolidCore on all six targets;
+  first cross-OS hash comparison). Recorded under "Done (session 2) / CI"
+  once it finishes.
+- Stage 0 overall: the OCCT half of 0F, 0H, 0I and 0J remain (table above).
 
 ## Blocked
 
-- 0E (`.pxp` SQLite format), 0F (kernel bake-off), 0H (UI and viewer, ADR-0002
-  prototypes), the MCP half of 0I, proptest and criterion all need crates.io
-  in the agent's sandbox (and git for SolidCore). **Fix:** allow package
-  installs in the claude.ai network settings, then start a new chat (an
-  existing chat may not pick up the change). CI itself already has network
-  access, so new dependencies are checked by cargo-deny on every push.
+- **NIST MBE PMI STEP models** for the bake-off corpus: `nist.gov` is not
+  reachable from the agent's sandbox. Fix: add `nist.gov` to the allowed
+  domains (Settings → Capabilities), then start a new chat. They also need
+  STEP import, which is not in the kernel trait yet.
+- **OCCT backend**: building OCCT from source is impractical on the
+  sandbox's 2 cores; session 3 tries prebuilt binaries or building in CI.
 
 ## Decisions needed from the user
 
-- None blocking. Optional, before Stage 4: whether user-written post
-  processors that embed library layers should get an explicit licence
-  exception (under LGPL they may stay private for in-shop use either way).
+- None blocking. For information: because `pxp-cli` now links the
+  SolidCraft backend, its binaries are conveyed under LGPL-3.0 (ADR-0001,
+  as planned for session 2). This is reversed if OCCT wins the bake-off and
+  the native backend leaves shipped binaries.
+- Optional, before Stage 4: whether user-written post processors that
+  embed library layers should get an explicit licence exception (under LGPL
+  they may stay private for in-shop use either way).
 
 ## Decisions taken
 
@@ -151,29 +185,31 @@ clean.
   numbers in trig (agent).
 - ADR-0002 to ADR-0005: written as Proposed with evaluation plans; decisions
   wait for prototypes and measurements.
+- Session 2 (agent): SolidCraft's kernel as the native bake-off candidate
+  (git dependency pinned to one commit); face counts compared as merged
+  counts; volume and area hashed to 9 significant digits; feature geometry
+  stored as the object payload in a backend-tagged envelope; derived edge
+  and vertex history records (documented in the kernel contract).
 
-## Proposed plan for session 2 (Stage 0, needs crates.io)
+## Proposed plan for session 3 (Stage 0)
 
-1. ~~Run cargo-deny and the CI matrix~~ Done: CI run #1 green everywhere.
-2. 0E: `pxp-format` on rusqlite: schema (ADR-0003 refinements), atomic save,
-   open, migrations framework, recovery journal, rolling backups, advisory
-   lock, first fuzz target.
-3. 0F: kernel bake-off harness; SolidCore adapter in `pxp-kernel-native`;
-   OCCT worker process in `pxp-kernel-occt`; corpus of 200+ parts; ADR-0004
-   decision.
-4. 0G: primitives and datum CSYS through the kernel trait; persistent naming
-   for primitive faces from `TopoHistory` roles.
-5. 0H: ADR-0002 prototypes (egui + `egui_dock` vs the second candidate after
-   the Slint licence check), then the NX-style shell and wgpu viewer.
-6. Swap `par_map` to rayon and `DocState`'s map to a persistent map; add
-   proptest invariants and criterion benchmarks with the Stage 0 performance
-   budgets.
+1. OCCT half of 0F: `pxp-kernel-occt` in a worker process (versioned
+   protocol, restart, transaction replay), measured on the same corpus;
+   decide ADR-0004.
+2. Grow the corpus towards 200 parts: NIST STEP models once `nist.gov` is
+   reachable and STEP import exists; more synthetic stress cases; slow cases
+   in a nightly workflow.
+3. 0H: ADR-0002 UI prototypes, the NX-style shell, the wgpu viewer, the
+   Block dialog and the WCS.
+4. 0I: MCP server and session journaling with geometry-hash comparison.
+5. Persistent map for `DocState`; criterion benchmarks with the Stage 0
+   budgets (0J).
 
 ## Temporary deviations from the master prompt
 
 | Rule | Deviation | Why | Removed when |
 | --- | --- | --- | --- |
-| Typed errors via thiserror | Hand-written `Display` + `Error` impls | No crates.io access | Optional: hand-written impls are equivalent; adopt thiserror when the network is available if preferred |
-| Data-parallel work uses rayon | Recompute levels use `std::thread::scope` chunks | No crates.io access | Network available; swap behind `pxp-compute` |
-| Property tests with proptest | Deterministic table-driven tests only | No crates.io access | Network available |
-| criterion benchmarks | None yet | No crates.io access | Network available (0J) |
+| Typed errors via thiserror | Session 1 crates keep hand-written `Display` + `Error` impls; session 2 crates (`pxp-format`) use thiserror | Session 1 had no crates.io | Optional: equivalent; convert when those crates are next touched |
+| criterion benchmarks | None yet | Budgets arrive with 0J | 0J |
+| Kernel corpus of at least 200 parts | 67 cases | Stage 1 operations, STEP import and `nist.gov` access are missing | Session 3 onwards |
+| Toolchain 1.97.0 pinned | Local checks run on the sandbox's stable toolchain; CI uses the pinned one | rustup cannot download 1.97.0 in the sandbox | Sandbox network allows static.rust-lang.org |

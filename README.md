@@ -5,7 +5,7 @@ follows Siemens NX's interaction grammar, with every application's data in
 one `.pxp` part file. Working name; licensed **LGPL-2.1-or-later**
 (ADR-0001).
 
-> **Status: pre-alpha, Stage 0 (Foundations), session 1.** There is no
+> **Status: pre-alpha, Stage 0 (Foundations), session 2.** There is no
 > graphical application yet. What exists is listed below and by
 > `pxp-cli status`. Nothing here claims parity with any commercial system.
 
@@ -23,7 +23,22 @@ one `.pxp` part file. Working name; licensed **LGPL-2.1-or-later**
   a panic-containing `KernelHost` (`pxp-kernel`); the `Application` trait and
   command registry (`pxp-appkit`); all six applications registered, with
   their commands shown as "Planned for Stage N."
-- **CLI** (`pxp-cli`): `apps`, `commands`, `find`, `shortcut`, `eval`,
+- **Part files** (`pxp-format`): `.pxp` as a SQLite database with atomic
+  saves, three rolling backups, a crash-recovery journal, an OS lock,
+  in-memory schema migrations and byte-for-byte preservation of unknown
+  object kinds.
+- **Geometry** (`pxp-kernel-native`): SolidCraft's pure-Rust B-rep kernel
+  (built on SolidCore) behind the kernel trait: block, cylinder, cone,
+  sphere, booleans, a complete topology history for every operation,
+  mass properties, a cross-platform geometry hash, exact B-rep storage.
+- **Modeling primitives** (`pxp-app-modeling`): datum CSYS, block,
+  cylinder, cone and sphere features whose parameters are expressions,
+  regenerated through the kernel and saved with their exact geometry.
+- **Kernel bake-off harness** (`pxp_kernel::bakeoff`): synthetic stress
+  cases and SolidCraft's analytic kernel cases, graded against hand
+  calculations.
+- **CLI** (`pxp-cli`): `part` (new, block, cylinder, cone, sphere, info,
+  verify), `bakeoff`, `apps`, `commands`, `find`, `shortcut`, `eval`,
   `status`, `version`.
 
 ## Build and try
@@ -33,10 +48,20 @@ cargo test --workspace
 cargo run -p pxp-cli -- status
 cargo run -p pxp-cli -- eval "7850[kg/m^3] * (100mm)^3" --decimals 3   # 7.850 kg
 cargo run -p pxp-cli -- find blend
+cargo run -p pxp-cli -- part new bracket.pxp --units mm
+cargo run -p pxp-cli -- part block bracket.pxp --size 10 20 30
+cargo run -p pxp-cli -- part info bracket.pxp     # hash, volume, area from the stored B-rep
+cargo run -p pxp-cli -- part verify bracket.pxp   # reopen, re-import, regenerate: identical
+cargo run -p pxp-cli -- bakeoff --corpus synthetic
 python3 tools/check_repo.py      # layering, unsafe, docs and SPDX policy
 ```
 
-The toolchain is pinned in `rust-toolchain.toml` (Rust 1.97.0).
+The toolchain is pinned in `rust-toolchain.toml` (Rust 1.97.0). The first
+build compiles SolidCore (about 40 MB of Rust) and needs roughly 6 GB of
+memory; on a small machine build with `-j1`.
+
+Binaries that link `pxp-kernel-native` (today `pxp-cli`) are conveyed under
+LGPL-3.0, because SolidCore is Apache-2.0 only (ADR-0001).
 
 ## Layout
 
