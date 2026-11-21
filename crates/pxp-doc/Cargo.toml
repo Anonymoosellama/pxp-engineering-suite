@@ -16,3 +16,6 @@ workspace = true
 pxp-units = { workspace = true }
 pxp-diag = { workspace = true }
 pxp-compute = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

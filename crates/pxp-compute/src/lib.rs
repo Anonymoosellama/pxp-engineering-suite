@@ -14,14 +14,12 @@
 //!   GPU/CPU dispatch rule (every GPU path has a CPU reference, an automatic
 //!   fallback, and an agreement test).
 //!
-//! ## Current implementation and planned swap
+//! ## Implementation
 //!
-//! The master prompt specifies rayon for data-parallel work. This session has
-//! no crates.io access, so [`par_map`] uses `std::thread::scope` with one
-//! contiguous chunk per available core. The signature is rayon-shaped
-//! (`Fn(&T) -> R + Sync`), so swapping the body for `par_iter().map()` later
-//! changes no caller. Recorded in `docs/STATUS.md` under temporary
-//! deviations.
+//! [`par_map`] runs on rayon's global work-stealing pool (the master prompt's
+//! choice for data-parallel work). Session 1 used `std::thread::scope` while
+//! crates.io was unreachable; the signature was rayon-shaped from the start,
+//! so the swap changed no caller.
 //!
 //! ## Data flow
 //!
@@ -42,7 +40,6 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -103,56 +100,35 @@ impl fmt::Display for ComputeError {
 
 impl std::error::Error for ComputeError {}
 
-/// Number of worker threads to use: the OS's available parallelism, or 1 if
-/// it cannot be determined.
+/// Number of worker threads in the parallel pool.
 #[must_use]
 pub fn worker_count() -> usize {
-    std::thread::available_parallelism().map_or(1, NonZeroUsize::get)
+    rayon::current_num_threads()
 }
 
 /// Applies `f` to every item in parallel and returns the results **in input
 /// order**.
 ///
-/// Method: split `items` into at most [`worker_count`] contiguous chunks, run
-/// each chunk on a scoped thread, then join the threads in chunk order and
-/// concatenate. Ordering is therefore independent of scheduling. Small inputs
-/// (fewer than 2 items, or a single core) run on the calling thread with no
-/// spawn overhead. Complexity: O(n) calls of `f` plus O(workers) spawns.
+/// Method: rayon's indexed parallel iterator over the slice, collected into a
+/// `Vec`, which places each result at its input index regardless of which
+/// thread computed it or when. Work stealing balances uneven item costs (one
+/// slow feature does not hold up a whole chunk). O(n) calls of `f`.
 ///
 /// # Errors
-/// [`ComputeError::WorkerPanicked`] if `f` panicked on any item (the other
-/// chunks still finish; their results are discarded).
+/// [`ComputeError::WorkerPanicked`] if `f` panicked on any item. Rayon
+/// re-raises a worker's panic in the calling thread; it is caught here so it
+/// never unwinds into the caller.
 pub fn par_map<T, R, F>(items: &[T], f: F) -> Result<Vec<R>, ComputeError>
 where
     T: Sync,
     R: Send,
     F: Fn(&T) -> R + Sync,
 {
-    let workers = worker_count().min(items.len());
-    if workers <= 1 {
-        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            items.iter().map(&f).collect()
-        }))
-        .map_err(|p| ComputeError::WorkerPanicked(pxp_diag::panic_message(p.as_ref())));
-    }
-    let chunk_len = items.len().div_ceil(workers);
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = items
-            .chunks(chunk_len)
-            .map(|chunk| scope.spawn(|| chunk.iter().map(&f).collect::<Vec<R>>()))
-            .collect();
-        let mut out = Vec::with_capacity(items.len());
-        let mut failure = None;
-        for handle in handles {
-            match handle.join() {
-                Ok(part) => out.extend(part),
-                Err(p) => {
-                    failure.get_or_insert_with(|| pxp_diag::panic_message(p.as_ref()));
-                }
-            }
-        }
-        failure.map_or(Ok(out), |m| Err(ComputeError::WorkerPanicked(m)))
-    })
+    use rayon::prelude::*;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        items.par_iter().map(&f).collect()
+    }))
+    .map_err(|p| ComputeError::WorkerPanicked(pxp_diag::panic_message(p.as_ref())))
 }
 
 #[cfg(test)]
