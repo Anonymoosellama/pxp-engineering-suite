@@ -198,7 +198,10 @@ pub fn replace_file(temp: &Path, target: &Path) -> Result<(), PlatformError> {
         .and_then(|f| f.sync_all())
         .map_err(io_err("flush", temp))?;
     std::fs::rename(temp, target).map_err(io_err("replace", target))?;
-    sync_parent_dir(target)
+    // Windows offers no directory-handle fsync; NTFS journals the rename.
+    #[cfg(unix)]
+    sync_parent_dir(target)?;
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -210,12 +213,6 @@ fn sync_parent_dir(path: &Path) -> Result<(), PlatformError> {
     File::open(dir)
         .and_then(|d| d.sync_all())
         .map_err(io_err("flush directory", dir))
-}
-
-#[cfg(not(unix))]
-fn sync_parent_dir(_path: &Path) -> Result<(), PlatformError> {
-    // Windows offers no directory handle fsync; NTFS journals the rename.
-    Ok(())
 }
 
 #[cfg(test)]
