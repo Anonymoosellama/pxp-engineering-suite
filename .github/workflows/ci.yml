@@ -4,7 +4,6 @@
 # here is green on every OS (master prompt, "Session loop").
 #
 # Not yet present, added as their crates land (never as empty jobs):
-#   - fuzz smoke test        -> with pxp-format's first parser (sub-stage 0E)
 #   - criterion benchmarks   -> with the performance budgets (0J)
 #   - packaging (MSI/MSIX, DMG, AppImage, Flatpak, .deb) -> with pxp-app (0H/0J)
 #   - nightly long fuzzing and the full kernel corpus -> .github/workflows/nightly.yml (0F)
@@ -51,6 +50,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  fuzz:
+    name: fuzz smoke (60 s per target)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --locked
+      - name: decode_object
+        run: cargo +nightly fuzz run decode_object -- -max_total_time=60
+      - name: decode_props
+        run: cargo +nightly fuzz run decode_props -- -max_total_time=60
 
   test:
     name: clippy + test + doc (${{ matrix.os }})

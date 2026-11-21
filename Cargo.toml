@@ -13,6 +13,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# cargo-fuzz targets build with nightly-only flags; see fuzz/Cargo.toml.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.0.1"
@@ -24,8 +26,14 @@ license = "LGPL-2.1-or-later"
 authors = ["PXP Engineering Suite contributors"]
 
 [workspace.dependencies]
-# Internal crates. External crates are added here (one version for the whole
-# workspace) once crates.io access is available; see docs/STATUS.md.
+# External crates: one version for the whole workspace. Every licence must pass
+# deny.toml (ADR-0001).
+rusqlite = { version = "0.43", features = ["bundled", "backup"] }
+thiserror = "2"
+rayon = "1.12"
+proptest = { version = "1.12", default-features = false, features = ["std"] }
+
+# Internal crates.
 pxp-units = { path = "crates/pxp-units" }
 pxp-math = { path = "crates/pxp-math" }
 pxp-platform = { path = "crates/pxp-platform" }

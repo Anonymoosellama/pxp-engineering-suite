@@ -15,4 +15,11 @@ workspace = true
 [dependencies]
 pxp-doc = { workspace = true }
 pxp-platform = { workspace = true }
-pxp-diag = { workspace = true }
+pxp-units = { workspace = true }
+pxp-math = { workspace = true }
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pxp-compute = { workspace = true }
+proptest = { workspace = true }

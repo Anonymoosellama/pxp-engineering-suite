@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# cargo-fuzz targets (run with a nightly toolchain: `cargo +nightly fuzz run
+# decode_object`). Kept outside the main workspace because libFuzzer builds
+# need nightly-only sanitizer flags. CI runs every target briefly on each
+# push; long runs belong in the nightly workflow.
+[package]
+name = "pxp-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "LGPL-2.1-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pxp-format = { path = "../crates/pxp-format" }
+
+[[bin]]
+name = "decode_object"
+path = "fuzz_targets/decode_object.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_props"
+path = "fuzz_targets/decode_props.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
