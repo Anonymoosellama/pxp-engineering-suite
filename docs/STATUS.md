@@ -27,8 +27,8 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0E | pxp-format: SQLite .pxp new/open/save/save as, migrations, recovery journal, backups, advisory lock, fuzz target | **Done, session 2** |
 | 0F | Kernel bake-off harness and corpus; SolidCraft backend in-process; OCCT in the worker process | **Native half done, session 2** (harness, 67-case corpus, SolidCraft backend measured). OCCT worker, NIST STEP corpus, 200-part target: session 3 |
 | 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | **Done headless, session 2** (CLI and Modeling recompute). WCS and the Block dialog arrive with the shell (0H) |
-| 0H | ADR-0002 UI prototypes (egui+egui_dock vs Slint), NX-style shell, wgpu viewer | Blocked: needs crates.io |
-| 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | Partly possible now (CLI); MCP needs serde |
+| 0H | ADR-0002 UI prototypes (egui+egui_dock vs Slint), NX-style shell, wgpu viewer | Session 3 (crates.io now reachable) |
+| 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | CLI part commands exist (session 2); MCP and journaling in session 3 |
 | 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | Later |
 
 ## Session 2 plan (2026-11-21) — Stage 0, sub-stages 0E, 0F (native half), 0G
@@ -175,10 +175,9 @@ clean.
 
 ## In progress
 
-- CI for the session 2 push (first build of SolidCore on all six targets;
-  first cross-OS hash comparison). Recorded under "Done (session 2) / CI"
-  once it finishes.
-- Stage 0 overall: the OCCT half of 0F, 0H, 0I and 0J remain (table above).
+- Nothing half-finished in the tree. Stage 0 overall: the OCCT half of
+  0F, 0H, 0I and 0J remain (table above); the Stage 0 gate is not
+  reached.
 
 ## Blocked
 
