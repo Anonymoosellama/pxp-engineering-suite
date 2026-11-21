@@ -2,6 +2,9 @@
 
 The agent keeps this file true at all times; the user confirms gate outcomes.
 
+Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
+(private). CI: `.github/workflows/ci.yml`, runs on every push.
+
 ## Gates
 
 | Stage | Scope | State |
@@ -47,9 +50,13 @@ The agent keeps this file true at all times; the user confirms gate outcomes.
 
 ## Done (session 1, 2026-11-20)
 
-Measured locally on Linux x86_64 with Rust 1.97.0. **CI has not run yet**
-(no remote repository), so nothing is "done" by the master prompt's
-definition until the matrix is green on all three OSes.
+Measured locally on Linux x86_64 with Rust 1.97.0, then confirmed by **CI run
+#1 (2026-11-20, commit `460f201`): green on all six targets** (Linux
+x86_64/aarch64, Windows x64/ARM64, macOS arm64/x86_64) plus the policy,
+rustfmt and cargo-deny jobs, in 2 min 15 s:
+<https://github.com/Anonymoosellama/pxp-engineering-suite/actions/runs/44846636374>.
+The session 1 items below therefore meet the master prompt's "CI green on all
+three OSes" condition.
 
 | Item | Evidence |
 | --- | --- |
@@ -57,8 +64,8 @@ definition until the matrix is green on all three OSes.
 | Workspace with all 39 crates, layered; 24 placeholders document their responsibility and planned stage and export no callable stubs | `cargo metadata`; `pxp-cli status` |
 | Lint policy: edition 2024, `forbid(unsafe_code)` everywhere, clippy pedantic + `unwrap_used`/`expect_used`/`indexing_slicing`/`panic` denied | `cargo clippy --workspace --all-targets -- -D warnings`: 0 findings |
 | Repo policy checks (layers, unsafe, crate docs, SPDX) | `python3 tools/check_repo.py`: 0 problems |
-| `deny.toml` (ADR-0001 licence list; plain Apache-2.0 needs a recorded exception) | not yet run: cargo-deny needs network |
-| CI matrix: Linux x86_64/aarch64, Windows x64/ARM64, macOS arm64/x86_64 | `.github/workflows/ci.yml` (never executed) |
+| `deny.toml` (ADR-0001 licence list; plain Apache-2.0 needs a recorded exception) | cargo-deny passed in CI run #1 (no external dependencies yet) |
+| CI matrix: Linux x86_64/aarch64, Windows x64/ARM64, macOS arm64/x86_64 | CI run #1: all six clippy + test + doc jobs green |
 | `pxp-units`: coherent mm-t-s units, newtypes, runtime quantities, unit parsing, mm/inch display (ADR-0007) | 27 unit tests + doc-tests |
 | `pxp-math`: vectors, transforms, Csys, Aabb, tolerances, stable FNV-1a hash | 17 tests |
 | `pxp-diag`, `pxp-compute`: error reports, panic messages, cancellation, ordered parallel map | 6 tests |
@@ -79,12 +86,11 @@ clean.
 ## Blocked
 
 - 0E (`.pxp` SQLite format), 0F (kernel bake-off), 0H (UI and viewer, ADR-0002
-  prototypes), the MCP half of 0I, cargo-deny, proptest and criterion all need
-  crates.io (and git for SolidCore). **Fix:** allow package installs in the
-  claude.ai network settings, then start a new chat (an existing chat may not
-  pick up the change).
-- CI needs a GitHub repository. **Fix:** create one (empty) and connect it, so
-  the next session can push and the matrix can run.
+  prototypes), the MCP half of 0I, proptest and criterion all need crates.io
+  in the agent's sandbox (and git for SolidCore). **Fix:** allow package
+  installs in the claude.ai network settings, then start a new chat (an
+  existing chat may not pick up the change). CI itself already has network
+  access, so new dependencies are checked by cargo-deny on every push.
 
 ## Decisions needed from the user
 
@@ -103,7 +109,7 @@ clean.
 
 ## Proposed plan for session 2 (Stage 0, needs crates.io)
 
-1. Run cargo-deny and the CI matrix; fix anything platform-specific.
+1. ~~Run cargo-deny and the CI matrix~~ Done: CI run #1 green everywhere.
 2. 0E: `pxp-format` on rusqlite: schema (ADR-0003 refinements), atomic save,
    open, migrations framework, recovery journal, rolling backups, advisory
    lock, first fuzz target.
