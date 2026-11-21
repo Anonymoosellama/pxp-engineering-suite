@@ -31,6 +31,51 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | Partly possible now (CLI); MCP needs serde |
 | 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | Later |
 
+## Session 2 plan (2026-11-21) — Stage 0, sub-stages 0E, 0F (native half), 0G
+
+Environment check at session start: crates.io downloads work; public GitHub
+repositories can be cloned; `nist.gov` is not reachable; the sandbox has 2
+CPU cores and 7 GB RAM.
+
+**Tasks**
+
+1. **Housekeeping:** `pxp-compute::par_map` on rayon; proptest invariants for
+   units, maths and the document core; a fuzz smoke job in CI.
+2. **0E `pxp-format`:** `.pxp` as SQLite (rusqlite, bundled SQLite) per
+   ADR-0003: schema v1, an explicit versioned binary codec for object
+   properties (no serde coupling of the file format to Rust structs), new/open/
+   save/save-as with atomic writes, a migration framework, the recovery journal
+   (written after every committed transaction, replayed on next open), rolling
+   backups, an OS advisory lock (`std::fs::File::try_lock`), byte-for-byte
+   preservation of unknown kinds, and a cargo-fuzz target for the reader.
+3. **0F native backend:** `pxp-kernel-native` on SolidCraft's
+   `solidcraft-kernel` (built on SolidCore; git dependency pinned to one
+   commit): primitives, booleans, topology, mass properties, geometry hash,
+   and its exact history mapped to `TopoHistory`. A bake-off harness with
+   synthetic stress cases and SolidCraft's reference parts. Licence: SolidCore
+   is Apache-2.0 only, so record the `deny.toml` exception and LGPL-3.0
+   conveyance (ADR-0001).
+4. **0G primitives:** block, cylinder, cone, sphere and datum CSYS created
+   through the kernel trait and recomputed by the Modeling application;
+   headless version of the checklist item "create a block, save, close,
+   reopen, geometry hash identical" (CLI and integration test).
+5. Update design notes, ADR-0003/0004, this file; CI green on all targets.
+
+**Deferred to session 3:** the OCCT worker-process backend (building OCCT from
+source is impractical on 2 cores; options include prebuilt binaries or building
+in CI), the NIST STEP corpus (`nist.gov` must be added to the allowed domains),
+0H (UI toolkit prototypes, shell, viewer), 0I (MCP server, journaling), 0J.
+
+**Risks**
+
+- `solidcraft-kernel` is unpublished with an experimental API: pin the
+  commit, wrap it entirely inside `pxp-kernel-native`, and expect breakage on
+  upgrades.
+- Compile time of SolidCore (about 43 MB of Rust source) on CI's six runners.
+- The kernel's history may not cover every vertex and edge; `KernelHost`
+  rejects incomplete histories, so any gap becomes a bake-off finding, not a
+  silent workaround.
+
 ## Session 1 plan (2026-11-20) — Stage 0, sub-stages 0A to 0D
 
 **Tasks**
