@@ -415,6 +415,25 @@ impl PartFile {
         }
     }
 
+    /// Closes the file. A journal holding no unsaved transactions is
+    /// deleted, so a cleanly closed part leaves only the `.pxp`, its
+    /// backups and its lock file (`.lock`, kept: deleting it safely would
+    /// need every platform to re-check the file identity after locking).
+    /// Unsaved transactions stay in the journal for recovery on next open.
+    /// Dropping a `PartFile` without `close` is safe too: the journal is
+    /// simply kept.
+    ///
+    /// # Errors
+    /// I/O or SQLite errors reading or deleting the journal.
+    pub fn close(mut self) -> Result<(), FormatError> {
+        if let Some(journal) = self.journal.take()
+            && journal.summary()?.is_none()
+        {
+            journal.remove()?;
+        }
+        Ok(())
+    }
+
     /// Existing backup files, newest first.
     #[must_use]
     pub fn backups(&self) -> Vec<PathBuf> {

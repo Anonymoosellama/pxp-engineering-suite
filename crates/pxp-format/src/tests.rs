@@ -358,3 +358,34 @@ fn identical_documents_write_identical_object_rows() {
     };
     assert_eq!(rows("one.pxp"), rows("two.pxp"));
 }
+
+#[test]
+fn clean_close_removes_the_journal_and_keeps_unsaved_work() {
+    let dir = dir("close");
+    let path = dir.join("part.pxp");
+    let file = PartFile::create(&path, PartMeta::millimetre(), &sample_doc()).unwrap();
+    assert!(sidecar(&path, ".journal").exists());
+    file.close().unwrap();
+    assert!(
+        !sidecar(&path, ".journal").exists(),
+        "clean close leaves no journal"
+    );
+    // Reopen, record a transaction without saving, close: the work is kept.
+    let Opened {
+        mut file,
+        mut document,
+        ..
+    } = PartFile::open(&path).unwrap();
+    let changes = document.subscribe();
+    document
+        .transact("Add depth", |tx| tx.set_expression("depth", "5mm"))
+        .unwrap();
+    let change = changes.try_recv().unwrap();
+    file.record(&document.snapshot(), &change).unwrap();
+    file.close().unwrap();
+    let reopened = PartFile::open(&path).unwrap();
+    assert_eq!(
+        reopened.recovery.map(|r| r.last_label),
+        Some("Add depth".to_owned())
+    );
+}
