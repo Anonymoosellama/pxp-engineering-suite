@@ -44,13 +44,19 @@ Target: SolidCraft's reference parts, public-domain STEP sets such as the
 NIST MBE PMI test models, and generated stress cases, at least 200 in
 total. Implemented in session 2 (`pxp_kernel::bakeoff`, run by
 `pxp-cli bakeoff`): 32 synthetic stress cases and the 35 SolidCraft
-analytic kernel cases expressible with primitives and booleans (67). The
-rest needs Stage 1 operations (sketch, extrude, blend) and STEP import, and
-the NIST models need network access to `nist.gov`.
+analytic kernel cases expressible with primitives and booleans (67). Session
+3 added the NIST MBE PMI STEP models (39 files from two pinned NIST
+releases, `tools/fetch_nist_step.py`, run by `pxp-cli stepstress`): read by
+each backend's own STEP translator and graded against the files' own
+validation properties and invariants (round trips, inclusion-exclusion of
+booleans), so 106 parts in all. The rest needs Stage 1 operations (sketch,
+extrude, blend).
 
 ## Measurements so far
 
-Full report: `docs/reports/kernel-bakeoff-2026-11-21-native.md`.
+Full reports: `docs/reports/kernel-bakeoff-2026-11-21-native.md`
+(primitive corpus) and `docs/reports/kernel-nist-step-stress-2026-11-21.md`
+(NIST STEP corpus).
 
 | Criterion | SolidCraft (native) | OCCT (worker) |
 | --- | --- | --- |
@@ -59,7 +65,13 @@ Full report: `docs/reports/kernel-bakeoff-2026-11-21-native.md`.
 | Time per case, median / p95 (opt-level 1, 2 vCPU) | 163 ms / 1.35 s | session 3 |
 | Same hash on repeated runs | 67 / 67 | session 3 |
 | Cross-OS hashes (66 cases, six targets) | 65 / 66 identical everywhere; case 3460 differs on both macOS targets only (same counts, volume, area) | session 3 |
-| Blends, STEP round trip | not measurable before Stage 1 | not measurable before Stage 1 |
+| NIST STEP: solids imported closed / passing the kernel's own check | 37 / 37 closed; 24 / 37 pass SMLib's check (12 of the 13 failures are gaps above tolerance, 1 a face vertex that does not classify) | session 3 |
+| NIST STEP: agreement with the files' stated volume, area, centroid | 16 / 16 within 0.1 % (median 1e-7, worst 3.7e-6) | session 3 |
+| NIST STEP: boolean identity checks on imported parts | 95 pass (worst residual 1.6e-8 on valid solids), 16 refused, all on 6 invalid solids | session 3 |
+| NIST STEP: STEP round trip within 1e-6 | 36 / 37 (one invalid solid comes back open) | session 3 |
+| NIST STEP: tessellated AP242 | 0 / 2 (not supported yet) | session 3 |
+| NIST STEP: same hash on repeated runs | 39 / 39 (cross-OS: nightly workflow, not run yet) | session 3 |
+| Blends | not measurable before Stage 1 | not measurable before Stage 1 |
 
 Early observations, not yet a decision: SolidCraft gave no wrong answer on
 this corpus, is pure safe Rust (in-process, no worker needed, panics
@@ -67,6 +79,13 @@ contained by `KernelHost`), and gives exact face and edge provenance. Its
 costs are the LGPL-3.0 conveyance, a large compile, an unpublished
 experimental API pinned to one commit, and face splitting at periodic seams
 (handled by merged counts and by split-aware naming).
+
+The NIST STEP corpus adds the first real-geometry evidence: SolidCraft's
+reader is accurate (it reproduces the exporting systems' own numbers) and
+never returned a wrong answer, but it does not heal tolerance defects, so 13
+of 37 real solids fail its own check and 5 of those refuse every boolean.
+Healing imported geometry is the criterion OCCT (shape healing) most needs
+to be compared on.
 
 ## Decision
 

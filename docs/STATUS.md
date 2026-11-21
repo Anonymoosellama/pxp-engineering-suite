@@ -9,7 +9,7 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 
 | Stage | Scope | State |
 | --- | --- | --- |
-| 0 | Foundations | **In progress** (sessions 1-2) |
+| 0 | Foundations | **In progress** (sessions 1-3) |
 | 1 | Modeling (CAD, assemblies) | Not started; gated on "Stage 0 approved" |
 | 2 | Drafting | Not started |
 | 3 | Manufacturing core | Not started |
@@ -25,11 +25,46 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0C | Document core pxp-doc: object store, typed unit-aware properties, expressions, dependency graph, recompute scheduler, transactions, undo/redo with memory cap, change bus, snapshots | Session 1 |
 | 0D | Contracts: pxp-kernel trait, OpResult and TopoHistory, KernelHost; Application trait and command registry; every application registered with greyed "Planned for Stage N" commands | Session 1 |
 | 0E | pxp-format: SQLite .pxp new/open/save/save as, migrations, recovery journal, backups, advisory lock, fuzz target | **Done, session 2** |
-| 0F | Kernel bake-off harness and corpus; SolidCraft backend in-process; OCCT in the worker process | **Native half done, session 2** (harness, 67-case corpus, SolidCraft backend measured). OCCT worker, NIST STEP corpus, 200-part target: session 3 |
+| 0F | Kernel bake-off harness and corpus; SolidCraft backend in-process; OCCT in the worker process | **Native half done, sessions 2-3** (harness, 67 primitive cases + 39 NIST STEP files = 106 parts, SolidCraft measured on both). OCCT worker and the 200-part target: remaining |
 | 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | **Done headless, session 2** (CLI and Modeling recompute). WCS and the Block dialog arrive with the shell (0H) |
 | 0H | ADR-0002 UI prototypes (egui+egui_dock vs Slint), NX-style shell, wgpu viewer | Session 3 (crates.io now reachable) |
 | 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | CLI part commands exist (session 2); MCP and journaling in session 3 |
 | 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | Later |
+
+## Session 3, part 1 (2026-11-21) — Stage 0, 0F: NIST STEP stress test
+
+The user asked for the NIST test model stress test and enabled `nist.gov`.
+Environment check: the shell's egress proxy still refuses `nist.gov` (403,
+"no rule allows this host"; the web-fetch tool can read its pages but not
+download archives); GitHub and crates.io work; 2 vCPU, 7 GB. Push access to
+this repository was refused for this session, so the work is a local branch
+handed over as a patch series.
+
+**Tasks**
+
+1. Get the NIST MBE PMI STEP models from a source the sandbox can reach,
+   with provenance: NIST's own repository `usnistgov/SFA` ships the same
+   package; pin two releases by commit and SHA-256
+   (`tools/fetch_nist_step.py`); check against the user's own `nist.gov`
+   download.
+2. STEP import through the kernel: `GeometryKernel::import_step`,
+   `export_step`, `bounding_box`, `check_validity` (defaults
+   `Unsupported`); SolidCraft's own reader and writer in
+   `pxp-kernel-native`.
+3. A STEP-file stress harness whose grades never come from the kernel: the
+   files' own geometric validation properties and declared bodies (read by
+   an independent Part 21 reader), round trips, and inclusion-exclusion
+   identities of booleans on the imported parts; `pxp-cli stepstress`.
+4. Run all 39 files twice; report; nightly workflow so the corpus runs on
+   every OS; one NIST file in the per-push tests.
+
+**Risks**
+
+- Grading real files against references they state about themselves: the
+  files have defects of their own (NIST warns), so every reference the
+  reader cannot trust is reported, not graded.
+- The NIST files may hit translator paths the kernel lacks (tessellated
+  AP242); those are findings, not harness failures.
 
 ## Session 2 plan (2026-11-21) — Stage 0, sub-stages 0E, 0F (native half), 0G
 
@@ -92,6 +127,30 @@ in CI), the NIST STEP corpus (`nist.gov` must be added to the allowed domains),
 - No crates.io access in this session: only std-only crates can be built. thiserror, rusqlite, rayon, egui, wgpu, proptest and criterion are unavailable, so error types are written by hand and parallelism uses `std::thread::scope`. Each substitution is listed under "Temporary deviations" below.
 - CI has never run: the workflow is written but cannot be exercised from this sandbox, so "CI green on all three OSes" is not yet met for anything.
 - Snapshots copy the object map (Arc-shared objects, O(n) pointer copies per transaction). Acceptable for Stage 0 scale; replace with a persistent map once crates are available (ADR-0006).
+
+## Done (session 3, part 1, 2026-11-21)
+
+Measured locally on Linux x86_64 (2 vCPU, 7 GB) with the installed stable
+toolchain, which is Rust 1.97.0 (rustup cannot fetch the pinned toolchain by
+name here). **Not yet confirmed by CI**:
+push access was refused, so nothing from this session has run on the six
+CI targets.
+
+| Item | Evidence |
+| --- | --- |
+| NIST corpus: 39 STEP files (28 current + 11 from the January 2026 release), NIST's own package from `usnistgov/SFA` at commits `1236017` and `c218911`, SHA-256 pinned; byte-identical to the user's `nist.gov` download (21 / 21 and 32 / 32 files compared) | `tools/fetch_nist_step.py` (tested: download and local zips) |
+| `pxp-kernel`: `import_step`, `export_step` (no time stamp: deterministic text), exact `bounding_box`, `check_validity`; `StepImport`, `ImportedShape` | defaults refuse; design note `docs/design/kernel-contract.md` ("STEP translation through the kernel") |
+| `pxp-kernel-native`: SolidCraft's STEP reader (uncached path) and writer, SMLib's exact box, SMLib's full check | 3 new conformance tests (STEP round trip of a drilled block against a hand calculation, garbage refused without panic, exact cylinder box): 15 conformance tests |
+| Bake-off: `bakeoff::p21` (independent Part 21 reader of validation properties and declared bodies: solid vs sheet aspects, unit resolution incl. inch and `AREA_UNIT`/`VOLUME_UNIT`, unit-label mismatch detection, zero and swapped-argument quirks) and `bakeoff::step` (7 checks per file) | 6 unit tests + 1 opt-in test over a STEP directory |
+| `pxp-cli stepstress FILE\|DIR… [--repeat N] [--format summary\|markdown\|tsv\|details] [--details FILE]` | integration test `crates/pxp-cli/tests/nist_step.rs` on NIST FTC-11 (public domain, notice in `tests/data/NIST-NOTICE.md`) |
+| **NIST stress test run** (39 files × 2 runs, 56.5 min): **24 / 39 pass every check**; 37 / 37 solids import closed; 16 / 16 files with stated properties agree (median 1e-7, worst 3.7e-6); 13 / 37 solids fail SMLib's own check (tolerance gaps) and 5 of them refuse every boolean; 1 STEP round trip fails (an invalid solid comes back open); both tessellated files unsupported; 39 / 39 deterministic; 0 incomplete histories, 0 crashes | `docs/reports/kernel-nist-step-stress-2026-11-21.md` (+ `.tsv` with the Linux x86_64 hashes); ADR-0004 measurements |
+| Nightly workflow: the NIST corpus on all six targets with the cross-OS hash comparison (`tools/ci/known-nist-differences.txt`, empty) | `.github/workflows/nightly.yml` (**untested**: needs a push) |
+
+Workspace total: **191 tests passing, 0 failing** (1 opt-in test ignored);
+clippy (pedantic, `-D warnings`) and rustdoc (`-D warnings`) clean;
+`tools/check_repo.py` 0 problems; `cargo fmt --check` clean. Tests ran with
+the optimised `kb` profile (a debug SolidCore build needs about 6 GB).
+`cargo deny` was not run locally (no dependency changed).
 
 ## Done (session 2, 2026-11-21)
 
@@ -177,20 +236,25 @@ clean.
 
 - Nothing half-finished in the tree. Stage 0 overall: the OCCT half of
   0F, 0H, 0I and 0J remain (table above); the Stage 0 gate is not
-  reached.
+  reached. The session 3 work waits for CI (see Blocked).
 
 ## Blocked
 
-- **NIST MBE PMI STEP models** for the bake-off corpus: `nist.gov` is not
-  reachable from the agent's sandbox. Fix: add `nist.gov` to the allowed
-  domains (Settings → Capabilities), then start a new chat. They also need
-  STEP import, which is not in the kernel trait yet.
+- **Pushing from the agent's sandbox**: access to push to this repository
+  was refused in session 3, so its commits exist only as the patch series
+  handed to the user. Until they are applied and pushed, CI has not run
+  them and the nightly workflow does not exist on GitHub.
+- `nist.gov` is still refused by the shell's egress proxy despite being
+  enabled. Not blocking: NIST's own GitHub repository serves the same
+  package, pinned by commit and checksum.
 - **OCCT backend**: building OCCT from source is impractical on the
   sandbox's 2 cores; session 3 tries prebuilt binaries or building in CI.
 
 ## Decisions needed from the user
 
-- None blocking. For information: because `pxp-cli` now links the
+- Apply and push the session 3 patch series (or grant push access), so CI
+  and the nightly NIST job run.
+- For information: because `pxp-cli` now links the
   SolidCraft backend, its binaries are conveyed under LGPL-3.0 (ADR-0001,
   as planned for session 2). This is reversed if OCCT wins the bake-off and
   the native backend leaves shipped binaries.
@@ -221,9 +285,11 @@ clean.
    centroids; next, per-part sub-hashes of coordinates and entity order),
    then fix the hash or report it to SolidCraft, and empty
    `tools/ci/known-cross-os-differences.txt`.
-3. Grow the corpus towards 200 parts: NIST STEP models once `nist.gov` is
-   reachable and STEP import exists; more synthetic stress cases; slow cases
-   in a nightly workflow.
+3. Grow the corpus towards 200 parts (106 now): more synthetic stress
+   cases; slow cases in the nightly workflow. NIST STEP corpus: done (part
+   1). Follow-ups from it: apply SolidCraft's `repair` after import and
+   re-measure the 13 invalid solids; report CTC-04 AP203 `rd`, FTC-07 and
+   the CTC-02 AP203-with-PMI round trip upstream; tessellated AP242 import.
 4. 0H: ADR-0002 UI prototypes, the NX-style shell, the wgpu viewer, the
    Block dialog and the WCS.
 5. 0I: MCP server and session journaling with geometry-hash comparison.
@@ -236,5 +302,5 @@ clean.
 | --- | --- | --- | --- |
 | Typed errors via thiserror | Session 1 crates keep hand-written `Display` + `Error` impls; session 2 crates (`pxp-format`) use thiserror | Session 1 had no crates.io | Optional: equivalent; convert when those crates are next touched |
 | criterion benchmarks | None yet | Budgets arrive with 0J | 0J |
-| Kernel corpus of at least 200 parts | 67 cases | Stage 1 operations, STEP import and `nist.gov` access are missing | Session 3 onwards |
+| Kernel corpus of at least 200 parts | 106 parts (67 primitive cases + 39 NIST STEP files) | Stage 1 operations are missing for SolidCraft's other cases | Session 3 onwards |
 | Toolchain 1.97.0 pinned | Local checks run on the sandbox's stable toolchain; CI uses the pinned one | rustup cannot download 1.97.0 in the sandbox | Sandbox network allows static.rust-lang.org |
