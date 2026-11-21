@@ -96,6 +96,42 @@ impl StableHasher {
         }
     }
 
+    /// Feeds an `f64` rounded to `digits` significant decimal digits (1 to
+    /// 15), for magnitudes with no natural absolute resolution (a volume, an
+    /// area). What is hashed is the rounded value's decimal exponent and
+    /// integer mantissa, never a re-scaled float, so two inputs that round
+    /// to the same digits always hash alike, including across a power of
+    /// ten (`99_999.999_999_9` and `100_000.000_000_1` at 9 digits). Zero,
+    /// NaN and infinities hash as themselves.
+    pub fn write_f64_significant(&mut self, v: f64, digits: u8) {
+        let digits = i32::from(digits.clamp(1, 15));
+        if v == 0.0 || !v.is_finite() {
+            self.write_f64(v);
+            return;
+        }
+        // Exponent of the last kept digit: v ≈ mantissa × 10^exp, with
+        // mantissa in [10^(digits-1), 10^digits).
+        // The f64 to i32 cast is exact: |log10| of a finite f64 is < 400.
+        #[allow(clippy::cast_possible_truncation)]
+        let mut exp = v.abs().log10().floor() as i32 - (digits - 1);
+        let mut mantissa = (v.abs() / 10_f64.powi(exp)).round();
+        let top = 10_f64.powi(digits);
+        if mantissa >= top {
+            // Rounding carried into a new digit (9.99… → 10.0…).
+            mantissa = (mantissa / 10.0).round();
+            exp += 1;
+        } else if mantissa < top / 10.0 {
+            // log10 rounded the other way at a power of ten.
+            exp -= 1;
+            mantissa = (v.abs() / 10_f64.powi(exp)).round();
+        }
+        self.write_bytes(&[u8::from(v < 0.0)]);
+        self.write_u64(u64::from(exp.cast_unsigned()));
+        // mantissa < 10^15 < 2^53: exact in f64 and in u64.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        self.write_u64(mantissa as u64);
+    }
+
     /// The hash of everything written so far.
     #[must_use]
     pub const fn finish(&self) -> u64 {
@@ -115,6 +151,29 @@ impl Default for StableHasher {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
+
+    fn sig(v: f64, digits: u8) -> u64 {
+        let mut h = StableHasher::new();
+        h.write_f64_significant(v, digits);
+        h.finish()
+    }
+
+    #[test]
+    fn significant_digits_absorb_last_bit_noise_and_decades() {
+        // 3 in = 76.19999999999999 mm in f64; 76.2 mm typed directly.
+        let a: f64 = 25.4 * 50.8 * (3.0 * 25.4);
+        let b: f64 = 25.4 * 50.8 * 76.2;
+        assert_ne!(a.to_bits(), b.to_bits());
+        assert_eq!(sig(a, 9), sig(b, 9));
+        // Across a power of ten.
+        assert_eq!(sig(99_999.999_999_9, 9), sig(100_000.000_000_1, 9));
+        assert_eq!(sig(1_000.0, 9), sig(1_000.000_000_000_1, 9));
+        // Different values, sign and digits still differ.
+        assert_ne!(sig(98_322.38, 9), sig(98_322.39, 9));
+        assert_ne!(sig(-5.0, 9), sig(5.0, 9));
+        assert_ne!(sig(5.0, 9), sig(50.0, 9));
+        assert_eq!(sig(0.0, 9), sig(-0.0, 9));
+    }
 
     #[test]
     fn known_fnv1a_vectors() {
