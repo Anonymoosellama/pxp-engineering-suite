@@ -47,9 +47,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Instant;
 
+mod p21;
 mod solidcraft;
 mod synthetic;
 
+pub use p21::{Declared, ValidationProperties, validation_properties};
 pub use solidcraft::cases as solidcraft_cases;
 pub use synthetic::cases as synthetic_cases;
 
