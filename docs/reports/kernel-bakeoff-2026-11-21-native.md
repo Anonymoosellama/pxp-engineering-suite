@@ -29,7 +29,7 @@ Timings below come from an optimised build (`opt-level = 1`, see
 | History completeness | Every operation passed `KernelHost::op`'s `check_complete`: 0 incomplete histories. Edges new to an operation and all vertices use the adapter's derived records (see "Findings") |
 | Speed (time per case, all steps) | median 163 ms, 95th percentile 1.35 s; slowest: the level-3 Menger sponge (560 primitives, 540 subtracts, then one join of 20 bodies) at 178 s |
 | In-process determinism | 67 of 67 cases gave the same geometry hash on both runs; debug and optimised builds give identical hashes |
-| Cross-OS determinism | Measured by CI from this session on: each of the six CI targets prints one hash per case and the `determinism` job compares them with Linux x86_64 |
+| Cross-OS determinism | First CI comparison (run 44936634115, 66 cases, slow case excluded): Linux x86_64, Linux aarch64 and this sandbox identical; **macOS arm64 differs in 1 case** (3460, which still passes there); Windows x64/ARM64 not yet compared (their test step failed on an unrelated Windows file-flush bug, since fixed) |
 | Blend success rate | Not measured: blends arrive in Stage 1 (the kernel trait has no blend operation yet) |
 | STEP round-trip fidelity | Not measured: STEP import/export arrives with `pxp-io-step` |
 
@@ -51,10 +51,21 @@ Timings below come from an optimised build (`opt-level = 1`, see
    The adapter derives those records from exact B-rep adjacency
    (`docs/design/kernel-contract.md`, "Derived records"); a block corner a
    boolean keeps is matched back to its input vertex.
-4. **Slow case.** The level-3 Menger sponge join takes 178 s (SolidCraft's
+4. **One cross-OS difference.** Case
+   `solidcraft/booleans/3460-cut-by-lid-with-coincident-walls-and-half-moon-tabs`
+   (coincident walls) gives a different geometry hash on macOS arm64 than on
+   Linux x86_64 and aarch64, while its volume passes on all three. Linux
+   aarch64 agrees with x86_64, so the cause is not the processor
+   architecture; the likeliest is a platform maths-library difference tipping
+   a tolerance decision in the kernel, or a value sitting on a rounding
+   boundary of the hash. CI now prints each case's fingerprint (raw and
+   merged counts, volume, area) to locate it; the pair is listed in
+   `tools/ci/known-cross-os-differences.txt` so any *new* difference still
+   fails CI.
+5. **Slow case.** The level-3 Menger sponge join takes 178 s (SolidCraft's
    rig allows it 1200 s). It is skipped in routine runs and CI
    (`--include-slow` runs it).
-5. **Build cost.** SolidCore is about 40 MB of Rust: a debug build of it
+6. **Build cost. SolidCore is about 40 MB of Rust: a debug build of it
    needs roughly 6 GB of memory and an `opt-level = 3` release build did not
    fit in this sandbox's 7 GB. CI runners have more memory; a small
    developer machine should build with `-j1`.

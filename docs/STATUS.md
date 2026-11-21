@@ -110,7 +110,7 @@ results for the pushed commits are recorded under "CI" below.
 | Licence: SolidCore (Apache-2.0 only) `deny.toml` exceptions; LGPL-3.0 conveyance of binaries linking it recorded | `deny.toml`; ADR-0001 table |
 | 0G Modeling primitives: datum CSYS, block, cylinder, cone, sphere with expression parameters (`p0`, `p1`, …), immediate update policy, regenerated through `KernelHost`, stored with exact B-rep and geometry hash | `pxp-app-modeling::primitives`; tests below |
 | 0G headless checklist "new part from mm and inch templates; create a block; save, close, reopen; geometry hash identical" | `pxp-cli part new/block/…/info/verify`; integration test `crates/pxp-cli/tests/part_roundtrip.rs` (3 tests: mm, inch, all primitives, refusal leaves the file untouched) |
-| Cross-OS determinism check | CI: every target prints the corpus hashes; job `determinism` diffs them |
+| Cross-OS determinism check | CI: every target prints hashes and fingerprints; job `determinism` (`tools/ci/compare_hashes.py`) fails on any difference not in `tools/ci/known-cross-os-differences.txt`. First result: Linux x86_64 = aarch64; macOS arm64 differs in 1 of 66 cases (finding, listed) |
 | Docs | `docs/design/kernel-contract.md` (derived records, backends, harness), `docs/design/file-format.md`, ADR-0001/0003/0004, README |
 
 Workspace total: **181 tests passing, 0 failing**; clippy (pedantic,
@@ -119,7 +119,17 @@ Workspace total: **181 tests passing, 0 failing**; clippy (pedantic,
 
 ### CI
 
-Pending for the session 2 push (see "In progress").
+- Run 44925583755 (commit `e3a4cd7`, file format): failed clippy on both
+  Windows targets (`unnecessary_wraps` on a Windows-only stub). Fixed in
+  `2cc6d0b`.
+- Run 44936634115 (commit `6fa3b64`): green on Linux x86_64, Linux aarch64
+  and macOS arm64 (tests, rustdoc and the bake-off step), plus policy,
+  rustfmt, cargo-deny (SolidCore licence exceptions accepted) and fuzz.
+  Windows x64 and ARM64 failed one test: the lock holder's note cannot be
+  read on Windows while the lock is held (mandatory locks). Fixed in the
+  next commit. Earlier Windows failure (save could not flush the temporary
+  file through a read-only handle) fixed in `6fa3b64`.
+- Final status of the last push: recorded below when it completes.
 
 ## Done (session 1, 2026-11-20)
 

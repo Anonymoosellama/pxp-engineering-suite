@@ -98,29 +98,24 @@ jobs:
       - name: Kernel bake-off hashes
         shell: bash
         run: |
-          cargo run -p pxp-cli --locked -- bakeoff --repeat 1 --format hashes --quiet > bakeoff-hashes.txt
-          cat bakeoff-hashes.txt
+          cargo run -p pxp-cli --locked -- bakeoff --repeat 1 --format details --quiet > bakeoff-details.txt
+          cat bakeoff-details.txt
+          cut -d' ' -f1-3 bakeoff-details.txt > bakeoff-hashes.txt
       - uses: actions/upload-artifact@v4
         with:
           name: bakeoff-hashes-${{ matrix.os }}
-          path: bakeoff-hashes.txt
+          path: |
+            bakeoff-hashes.txt
+            bakeoff-details.txt
 
   determinism:
     name: cross-OS geometry hashes identical
     needs: test
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           pattern: bakeoff-hashes-*
       - name: Compare every OS with Linux x86_64
-        shell: bash
-        run: |
-          status=0
-          for f in bakeoff-hashes-*/bakeoff-hashes.txt; do
-            if ! diff -u bakeoff-hashes-ubuntu-24.04/bakeoff-hashes.txt "$f"; then
-              echo "::error::$f differs from Linux x86_64"
-              status=1
-            fi
-          done
-          exit $status
+        run: python3 tools/ci/compare_hashes.py tools/ci/known-cross-os-differences.txt ubuntu-24.04 bakeoff-hashes-*

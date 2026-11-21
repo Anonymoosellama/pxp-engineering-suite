@@ -203,6 +203,10 @@ pub struct Outcome {
     pub hash: Option<u64>,
     /// Every repeat gave the same status and hash.
     pub deterministic: bool,
+    /// Diagnostic fingerprint of the first run (raw entity counts, merged
+    /// faces, shells, volume and area to 12 significant digits), for
+    /// finding where two platforms' hashes part ways.
+    pub fingerprint: Option<String>,
 }
 
 /// What a run of the whole corpus produced.
@@ -236,6 +240,8 @@ impl Drop for Bodies<'_> {
 struct Final {
     volume: f64,
     area: f64,
+    vertices: usize,
+    edges: usize,
     /// Faces as the kernel stores them.
     faces: usize,
     /// Merged faces, if the backend can count them.
@@ -301,6 +307,8 @@ fn run_steps(host: &KernelHost, steps: &[Step]) -> Result<Final, KernelError> {
     let mut fin = Final {
         volume: 0.0,
         area: 0.0,
+        vertices: 0,
+        edges: 0,
         faces: 0,
         merged_faces: Some(0),
         shells: 0,
@@ -312,8 +320,11 @@ fn run_steps(host: &KernelHost, steps: &[Step]) -> Result<Final, KernelError> {
         fin.volume += m.volume.mm3();
         fin.area += m.area.mm2();
         let topo = host.call(|k| k.topology(*s))?;
-        fin.faces += topo.iter().filter(|t| t.kind == TopoKind::Face).count();
-        fin.shells += topo.iter().filter(|t| t.kind == TopoKind::Shell).count();
+        let count = |kind| topo.iter().filter(|t| t.kind == kind).count();
+        fin.vertices += count(TopoKind::Vertex);
+        fin.edges += count(TopoKind::Edge);
+        fin.faces += count(TopoKind::Face);
+        fin.shells += count(TopoKind::Shell);
         fin.merged_faces = match (fin.merged_faces, host.call(|k| k.merged_counts(*s))) {
             (Some(sum), Ok(m)) => Some(sum + m.faces),
             (_, Err(KernelError::Unsupported { .. })) | (None, _) => None,
@@ -410,6 +421,19 @@ pub fn run_case(host: &KernelHost, case: &Case, repeats: usize) -> Outcome {
     let seconds = start.elapsed().as_secs_f64();
     let (status, detail) = grade(case, &first);
     let hash = first.as_ref().ok().map(|f| f.hash);
+    let fingerprint = first.as_ref().ok().map(|f| {
+        format!(
+            "v{} e{} f{}/{} s{} V={:.11e} A={:.11e}",
+            f.vertices,
+            f.edges,
+            f.faces,
+            f.merged_faces
+                .map_or_else(|| "?".to_owned(), |n| n.to_string()),
+            f.shells,
+            f.volume,
+            f.area
+        )
+    });
     let deterministic = (1..repeats).all(|_| {
         let again = run_steps(host, &case.steps);
         grade(case, &again).0 == status && again.as_ref().ok().map(|f| f.hash) == hash
@@ -421,6 +445,7 @@ pub fn run_case(host: &KernelHost, case: &Case, repeats: usize) -> Outcome {
         seconds,
         hash,
         deterministic,
+        fingerprint,
     }
 }
 
@@ -473,6 +498,28 @@ impl Report {
                 .hash
                 .map_or_else(|| "-".to_owned(), |h| format!("{h:016x}"));
             let _ = writeln!(out, "{} {} {}", o.id, o.status.label(), h);
+        }
+        out
+    }
+
+    /// [`Report::hashes`] lines followed by each case's fingerprint, for
+    /// diagnosing a cross-platform difference. The first three fields of
+    /// each line are exactly the `hashes` line.
+    #[must_use]
+    pub fn details(&self) -> String {
+        let mut out = String::new();
+        for o in &self.outcomes {
+            let h = o
+                .hash
+                .map_or_else(|| "-".to_owned(), |h| format!("{h:016x}"));
+            let _ = writeln!(
+                out,
+                "{} {} {} {}",
+                o.id,
+                o.status.label(),
+                h,
+                o.fingerprint.as_deref().unwrap_or("-")
+            );
         }
         out
     }

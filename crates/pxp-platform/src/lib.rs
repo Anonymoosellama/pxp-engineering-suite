@@ -52,7 +52,9 @@ pub enum PlatformError {
     Locked {
         /// The lock file.
         path: PathBuf,
-        /// What the holder wrote, if anything.
+        /// What the holder wrote ("pid N on host"), or empty when it cannot
+        /// be read: Windows locks are mandatory, so other processes cannot
+        /// read a locked file.
         holder: String,
     },
     /// An I/O error, with the path involved.
@@ -69,6 +71,9 @@ pub enum PlatformError {
 impl fmt::Display for PlatformError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Locked { path, holder } if holder.is_empty() => {
+                write!(f, "{} is in use by another session", path.display())
+            }
             Self::Locked { path, holder } => {
                 write!(
                     f,
@@ -235,7 +240,11 @@ mod tests {
         let path = dir.join("part.pxp.lock");
         let first = FileLock::try_acquire(&path).unwrap();
         match FileLock::try_acquire(&path) {
-            Err(PlatformError::Locked { holder, .. }) => assert!(holder.contains("pid")),
+            // Windows byte-range locks are mandatory: the holder's note is
+            // unreadable to anyone else while the lock is held.
+            Err(PlatformError::Locked { holder, .. }) => {
+                assert!(holder.contains("pid") || (cfg!(windows) && holder.is_empty()));
+            }
             other => panic!("expected Locked, got {other:?}"),
         }
         drop(first);

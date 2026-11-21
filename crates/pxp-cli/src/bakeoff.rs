@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 
 pub(crate) const USAGE: &str = "\
 usage: pxp-cli bakeoff [--corpus all|synthetic|solidcraft] [--filter TEXT] [--repeat N]
-                       [--format summary|markdown|hashes] [--include-slow] [--quiet]";
+                       [--format summary|markdown|hashes|details] [--include-slow] [--quiet]";
 
 fn usage(m: impl Into<String>) -> CliError {
     CliError::Usage(format!("{}\n\n{USAGE}", m.into()))
@@ -60,7 +60,7 @@ impl<'a> Options<'a> {
                 other => return Err(usage(format!("unknown option {other}"))),
             }
         }
-        if !["summary", "markdown", "hashes"].contains(&o.format) {
+        if !["summary", "markdown", "hashes", "details"].contains(&o.format) {
             return Err(usage(format!("unknown format '{}'", o.format)));
         }
         Ok(Some(o))
@@ -140,6 +140,7 @@ pub(crate) fn run(args: &[String], kernel: &KernelHost) -> Result<String, CliErr
         "markdown" if skipped.is_empty() => report.to_markdown(),
         "markdown" => format!("{}\n{skipped}", report.to_markdown()),
         "hashes" => report.hashes(),
+        "details" => report.details(),
         _ => format!("{}{skipped}", summary(&report)),
     })
 }

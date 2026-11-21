@@ -60,7 +60,7 @@ it happens.
 
 | File | Purpose | Lifetime |
 | --- | --- | --- |
-| `part.pxp.lock` | OS advisory lock (`std::fs::File::try_lock`) plus "pid N on host" for the "in use by" message | Kept after close (deleting it safely would need every platform to re-check the file's identity after locking) |
+| `part.pxp.lock` | OS lock (`std::fs::File::try_lock`) plus "pid N on host" for the "in use by" message (Unix only: Windows locks are mandatory, so the note cannot be read while the file is locked and the message omits it) | Kept after close (deleting it safely would need every platform to re-check the file's identity after locking) |
 | `part.pxp.journal` | Recovery journal: every committed transaction since the last save, written with `synchronous=FULL` | Reset on save; deleted by `PartFile::close` when it holds no unsaved work |
 | `part.pxp.bak1..3` | The three previous saves | Rotated on every save |
 
