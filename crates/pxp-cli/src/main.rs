@@ -14,6 +14,7 @@
 //! | `pxp-cli part info FILE` | Features, states, kernels, geometry hashes, and mass properties read from the stored exact B-reps |
 //! | `pxp-cli part verify FILE` | Re-imports every stored B-rep and regenerates every feature: hashes and bytes must match (exit 1 otherwise) |
 //! | `pxp-cli bakeoff [--corpus …] [--format summary\|markdown\|hashes]` | Runs the kernel bake-off corpus against the native backend |
+//! | `pxp-cli stepstress [--repeat N] [--format summary\|markdown\|tsv\|details] FILE\|DIR...` | Imports STEP files (the NIST MBE PMI test models) with the native backend and stress-tests them: file-stated validation properties, round trips, boolean identities |
 //! | `pxp-cli apps` | Lists the six applications and when their commands arrive |
 //! | `pxp-cli commands [APP]` | Lists commands (all, or one application's) with status, ribbon placement and shortcut |
 //! | `pxp-cli find QUERY` | Command Finder: search commands by label, ID or description |
@@ -43,6 +44,7 @@
 
 mod bakeoff;
 mod part;
+mod stepstress;
 
 use pxp_appkit::{AppRegistry, CommandSpec, CommandStatus};
 use pxp_compute::CancelToken;
@@ -78,7 +80,7 @@ impl std::fmt::Display for CliError {
     }
 }
 
-const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|status|version>";
+const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|stepstress [...] FILE|DIR...|status|version>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -140,6 +142,7 @@ fn run(args: &[String]) -> Result<String, CliError> {
             part::run(rest, &registry, &kernel)
         }
         "bakeoff" => bakeoff::run(rest, &native_kernel()),
+        "stepstress" => stepstress::run(rest, &native_kernel()),
         "status" => Ok(status()),
         "version" | "--version" | "-V" => Ok(version()),
         "help" | "--help" | "-h" => Ok(format!("{USAGE}\n")),
