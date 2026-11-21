@@ -194,7 +194,11 @@ fn host_name() -> String {
 /// # Errors
 /// [`PlatformError::Io`] naming the failing step.
 pub fn replace_file(temp: &Path, target: &Path) -> Result<(), PlatformError> {
-    File::open(temp)
+    // Write access: Windows' FlushFileBuffers refuses read-only handles
+    // ("Access is denied"); Unix accepts either.
+    OpenOptions::new()
+        .write(true)
+        .open(temp)
         .and_then(|f| f.sync_all())
         .map_err(io_err("flush", temp))?;
     std::fs::rename(temp, target).map_err(io_err("replace", target))?;
