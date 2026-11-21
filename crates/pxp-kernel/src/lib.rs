@@ -360,6 +360,43 @@ pub struct MergedCounts {
 /// far below any modeling tolerance, far above floating-point noise.
 pub const DEFAULT_HASH_RESOLUTION: Length = Length::from_mm(1e-6);
 
+/// One body a backend's STEP translator read
+/// ([`GeometryKernel::import_step`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedShape {
+    /// The body, owned by the backend that read it: release it when done.
+    pub shape: ShapeHandle,
+    /// Name from the file (the solid's label, else its product's); may be
+    /// empty.
+    pub name: String,
+    /// Every face the file gives for this solid was read and the shell
+    /// closes. `false` means faces were left out (or the file holds a
+    /// surface model): the body is open and must not be graded as a solid.
+    pub closed: bool,
+    /// A facet (mesh) body, such as AP242 tessellated geometry: no exact
+    /// B-rep, so exact operations refuse it.
+    pub mesh: bool,
+}
+
+/// What a backend's STEP translator made of one file. Nothing it skipped
+/// is hidden: every entity it could not read, and every repair it made, is
+/// in [`StepImport::warnings`] (pxp-io-step's "must never report success
+/// for entities it skipped").
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StepImport {
+    /// The bodies read, in file order.
+    pub shapes: Vec<ImportedShape>,
+    /// Distinct solid items the file places.
+    pub parts: usize,
+    /// Of [`StepImport::parts`], how many came in as closed solids.
+    pub closed_parts: usize,
+    /// The `FILE_SCHEMA` the file declares (`AP242_…`, `CONFIG_CONTROL_DESIGN`).
+    pub schema: String,
+    /// What could not be read or had to be repaired, in the translator's
+    /// own words.
+    pub warnings: Vec<String>,
+}
+
 /// Mass properties at unit density. Multiply by a material density
 /// ([`pxp_units::Density`]) for mass.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -643,6 +680,74 @@ pub trait GeometryKernel: Send + Sync {
     /// # Errors
     /// [`KernelError::InvalidInput`] for bytes this backend cannot read.
     fn import_native(&self, bytes: &[u8]) -> Result<ShapeHandle, KernelError>;
+
+    /// The shape's exact axis-aligned bounding box (mm): computed on the
+    /// exact curves and surfaces, not on vertices, so curved faces that
+    /// bulge past every vertex are inside it.
+    ///
+    /// # Errors
+    /// [`KernelError::UnknownShape`] or a geometry failure; the default
+    /// refuses with [`KernelError::Unsupported`].
+    fn bounding_box(&self, shape: ShapeHandle) -> Result<pxp_math::Aabb, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "bounding_box",
+            reason: format!("backend cannot bound shape {}", shape.id),
+        })
+    }
+
+    /// Runs the backend's own validity check on a shape (NX: Examine
+    /// Geometry): each test it fails, in its words; empty when the shape
+    /// passes. A shape that fails may be refused by later operations, so
+    /// an import whose bodies fail it is not ready for modeling even when
+    /// every body is closed.
+    ///
+    /// # Errors
+    /// [`KernelError::UnknownShape`], a check that cannot run, or (the
+    /// default) [`KernelError::Unsupported`].
+    fn check_validity(&self, shape: ShapeHandle) -> Result<Vec<String>, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "check_validity",
+            reason: format!("backend has no validity check (shape {})", shape.id),
+        })
+    }
+
+    /// Reads a STEP (ISO 10303-21) file's solids with this backend's own
+    /// translator (OCCT and SolidCraft each have one). Bodies come back in
+    /// millimetres, placed where the file puts them, with no history: an
+    /// import starts a part, it is not the result of an operation on one.
+    ///
+    /// The text is untrusted: a backend must refuse what it cannot read
+    /// rather than panic, hang or return a partial body without saying so.
+    ///
+    /// # Errors
+    /// [`KernelError::InvalidInput`] for text that is not readable STEP, a
+    /// geometry failure, or (the default) [`KernelError::Unsupported`].
+    fn import_step(&self, text: &str) -> Result<StepImport, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "import_step",
+            reason: format!(
+                "backend has no STEP translator ({} bytes offered)",
+                text.len()
+            ),
+        })
+    }
+
+    /// Writes `shapes` as one STEP file (AP242 geometry, one product per
+    /// shape). The header carries no time stamp, so identical shapes give
+    /// identical text (determinism rule).
+    ///
+    /// # Errors
+    /// [`KernelError::UnknownShape`], a geometry failure, or (the default)
+    /// [`KernelError::Unsupported`].
+    fn export_step(&self, shapes: &[ShapeHandle]) -> Result<String, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "export_step",
+            reason: format!(
+                "backend has no STEP writer ({} shapes offered)",
+                shapes.len()
+            ),
+        })
+    }
 
     /// Frees a shape. Releasing an unknown handle is a no-op.
     fn release(&self, shape: ShapeHandle);
