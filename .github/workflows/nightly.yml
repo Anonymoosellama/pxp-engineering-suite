@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Nightly: kernel corpora too slow for every push (master prompt, Stage 0:
+# "A nightly job runs long fuzzing and the full corpus").
+#
+#   - nist-step: the NIST MBE PMI STEP test models (39 files from two pinned
+#     NIST releases, tools/fetch_nist_step.py) through `pxp-cli stepstress`
+#     on every OS, then the same cross-OS hash comparison as ci.yml.
+#
+# Failing files are findings, reported in the uploaded report, not job
+# failures: the job fails only if the run itself breaks, and `determinism`
+# fails on any cross-OS hash difference not listed in
+# tools/ci/known-nist-differences.txt. Long fuzzing and `bakeoff
+# --include-slow` join this file when they are scheduled.
+
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 7 * * *"   # 07:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # An optimised build makes the run about 20-50 times faster than debug;
+  # opt-level 1 keeps SolidCore's compile within the smaller runners' memory.
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+  CARGO_PROFILE_RELEASE_DEBUG: "false"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "256"
+
+jobs:
+  nist-step:
+    name: NIST STEP stress (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - windows-2025
+          - windows-11-arm
+          - macos-15
+          - macos-15-intel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Fetch the NIST STEP models (pinned commits, SHA-256 checked)
+        run: python3 tools/fetch_nist_step.py nist
+      - name: Stress test
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo run --release -p pxp-cli --locked -- stepstress --repeat 2 --format tsv --header nist/current nist/2026-01 | tee nist-step.tsv
+          # `id status hash` lines for tools/ci/compare_hashes.py.
+          awk -F'\t' 'NR > 1 { print $1, $2, $25 }' nist-step.tsv > bakeoff-hashes.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bakeoff-hashes-${{ matrix.os }}
+          path: |
+            nist-step.tsv
+            bakeoff-hashes.txt
+
+  determinism:
+    name: NIST STEP hashes identical across OSes
+    needs: nist-step
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bakeoff-hashes-*
+      - name: Compare every OS with Linux x86_64
+        run: python3 tools/ci/compare_hashes.py tools/ci/known-nist-differences.txt ubuntu-24.04 bakeoff-hashes-*
