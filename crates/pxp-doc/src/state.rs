@@ -126,6 +126,79 @@ impl DocState {
         }
     }
 
+    /// Checks a whole loaded state: every dependency target exists, no
+    /// object depends on itself, expression names are valid and unique, and
+    /// the graph has no cycle anywhere.
+    ///
+    /// Method: Kahn's algorithm over the full graph; any object never
+    /// reaching in-degree zero lies on (or behind) a cycle. O(V + E).
+    pub(crate) fn validate_all(&self) -> Result<(), DocError> {
+        let mut names = BTreeMap::new();
+        for obj in self.objects.values() {
+            for dep in &obj.deps {
+                if dep.on == obj.id {
+                    return Err(DocError::Cycle {
+                        from: obj.id,
+                        to: obj.id,
+                    });
+                }
+                if !self.objects.contains_key(&dep.on) {
+                    return Err(DocError::DanglingDependency {
+                        from: obj.id,
+                        to: dep.on,
+                    });
+                }
+            }
+            if obj.kind == ObjectKind::EXPRESSION {
+                let name = obj.name.as_deref().unwrap_or_default();
+                if !expr::is_valid_name(name) {
+                    return Err(DocError::InvalidName(name.to_owned()));
+                }
+                if names.insert(name.to_owned(), obj.id).is_some() {
+                    return Err(DocError::DuplicateExpressionName(name.to_owned()));
+                }
+            }
+        }
+        let mut indegree: BTreeMap<ObjectId, usize> = self
+            .objects
+            .values()
+            .map(|o| {
+                (
+                    o.id,
+                    o.deps.iter().map(|d| d.on).collect::<BTreeSet<_>>().len(),
+                )
+            })
+            .collect();
+        let mut ready: Vec<ObjectId> = indegree
+            .iter()
+            .filter(|&(_, &n)| n == 0)
+            .map(|(&id, _)| id)
+            .collect();
+        let mut seen = 0_usize;
+        while let Some(id) = ready.pop() {
+            seen += 1;
+            for child in self.dependants.get(&id).into_iter().flatten() {
+                if let Some(n) = indegree.get_mut(child) {
+                    *n = n.saturating_sub(1);
+                    if *n == 0 {
+                        ready.push(*child);
+                    }
+                }
+            }
+        }
+        if seen == self.objects.len() {
+            return Ok(());
+        }
+        let stuck = indegree.iter().find(|&(_, &n)| n > 0).map(|(&id, _)| id);
+        match stuck.and_then(|id| self.objects.get(&id)) {
+            Some(obj) => {
+                let to = obj.deps.iter().next().map_or(obj.id, |d| d.on);
+                Err(DocError::Cycle { from: obj.id, to })
+            }
+            None => Ok(()),
+        }
+    }
+
     /// Every object that depends, directly or transitively, on any of
     /// `roots`. Roots are included only if reachable from another root.
     /// Iterative depth-first search; O(visited nodes + edges).

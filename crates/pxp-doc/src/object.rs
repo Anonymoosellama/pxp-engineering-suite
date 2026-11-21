@@ -403,6 +403,30 @@ impl NewObject {
         self.object.state = state;
         self
     }
+
+    /// Sets the diagnostic text (a failure reason or warning). File readers
+    /// use this to restore a saved diagnostic; commands normally leave it to
+    /// recompute.
+    #[must_use]
+    pub fn diagnostic(mut self, text: Option<String>) -> Self {
+        self.object.diagnostic = text;
+        self
+    }
+}
+
+impl Object {
+    /// Rebuilds an object read from storage, keeping its persisted ID.
+    ///
+    /// Only file readers (`pxp-format`) and journal replay should call this:
+    /// commands create objects through [`crate::Tx::create`], which assigns a
+    /// new ID. The result is validated when it enters a document through
+    /// [`crate::Document::from_objects`].
+    #[must_use]
+    pub fn restore(id: ObjectId, fields: NewObject) -> Self {
+        let mut object = fields.object;
+        object.id = id;
+        object
+    }
 }
 
 #[cfg(test)]

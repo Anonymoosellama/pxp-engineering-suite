@@ -61,6 +61,9 @@ pub enum DocError {
     },
     /// A long operation was cancelled; nothing was committed.
     Cancelled,
+    /// Stored data is internally inconsistent (for example an object ID
+    /// appears twice). Raised only when loading.
+    Corrupt(String),
     /// Undo was requested with an empty undo history.
     NothingToUndo,
     /// Redo was requested with an empty redo history.
@@ -96,6 +99,7 @@ impl fmt::Display for DocError {
                 )
             }
             Self::Cancelled => write!(f, "cancelled; nothing was changed"),
+            Self::Corrupt(m) => write!(f, "stored data is corrupt: {m}"),
             Self::NothingToUndo => write!(f, "nothing to undo"),
             Self::NothingToRedo => write!(f, "nothing to redo"),
         }

@@ -523,3 +523,62 @@ fn evaluate_previews_without_changing_anything() {
     assert_eq!(v, mm(50.0));
     assert_eq!(d.generation(), g);
 }
+
+#[test]
+fn from_objects_round_trips_a_snapshot() {
+    let mut d = doc();
+    let (_, double, chain) = three_level_model(&mut d);
+    d.recompute(&TestHandler, &CancelToken::new()).unwrap();
+    let snap = d.snapshot();
+    let copies: Vec<Object> = snap.objects().cloned().collect();
+    let loaded = Document::from_objects(copies, Box::new(SequentialIdSource::new(9))).unwrap();
+    let l = loaded.snapshot();
+    assert_eq!(l.len(), 3);
+    assert_eq!(result_of(&l, chain), Some(21.0));
+    assert_eq!(
+        l.dependants(double).collect::<Vec<_>>(),
+        vec![chain],
+        "index rebuilt"
+    );
+    assert_eq!(l.expression_value("width"), Some(mm(10.0)));
+    assert!(!loaded.can_undo(), "opening is not an undo step");
+}
+
+#[test]
+fn from_objects_rejects_corrupt_graphs() {
+    let id = |n: u128| ObjectId::from_u128(n);
+    let node = |n: u128, dep: Option<u128>| {
+        let mut spec = NewObject::new(CHAIN, TEST_APP);
+        if let Some(d) = dep {
+            spec = spec.dep(id(d), "input");
+        }
+        Object::restore(id(n), spec)
+    };
+    let ids = || -> Box<dyn pxp_doc::IdSource> { Box::new(SequentialIdSource::new(1)) };
+    // Dangling dependency.
+    assert!(matches!(
+        Document::from_objects([node(1, Some(99))], ids()),
+        Err(DocError::DanglingDependency { .. })
+    ));
+    // Cycle 1 -> 2 -> 1.
+    assert!(matches!(
+        Document::from_objects([node(1, Some(2)), node(2, Some(1))], ids()),
+        Err(DocError::Cycle { .. })
+    ));
+    // Duplicate ID.
+    assert!(matches!(
+        Document::from_objects([node(1, None), node(1, None)], ids()),
+        Err(DocError::Corrupt(_))
+    ));
+    // Duplicate expression names.
+    let e = |n: u128| {
+        Object::restore(
+            id(n),
+            NewObject::new(ObjectKind::EXPRESSION, AppId::CORE).name("w"),
+        )
+    };
+    assert!(matches!(
+        Document::from_objects([e(1), e(2)], ids()),
+        Err(DocError::DuplicateExpressionName(_))
+    ));
+}

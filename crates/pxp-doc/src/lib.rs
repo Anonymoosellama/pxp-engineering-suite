@@ -158,6 +158,38 @@ impl Document {
         }
     }
 
+    /// Rebuilds a document from stored objects (file open, crash recovery).
+    ///
+    /// The objects keep their persisted IDs and states. The whole graph is
+    /// validated (dependencies exist, no cycles, unique expression names)
+    /// before the document exists, so a corrupt file can never produce a
+    /// document that breaks the core's invariants. The undo history starts
+    /// empty: opening a part is not an undoable step.
+    ///
+    /// # Errors
+    /// [`DocError::DanglingDependency`], [`DocError::Cycle`],
+    /// [`DocError::InvalidName`] or [`DocError::DuplicateExpressionName`] for
+    /// an inconsistent graph, or [`DocError::Corrupt`] if an ID appears twice.
+    pub fn from_objects(
+        objects: impl IntoIterator<Item = Object>,
+        ids: Box<dyn IdSource>,
+    ) -> Result<Self, DocError> {
+        let mut state = DocState::default();
+        for obj in objects {
+            let id = obj.id;
+            if state.replace_raw(id, Some(Arc::new(obj))).is_some() {
+                return Err(DocError::Corrupt(format!("object {id} appears twice")));
+            }
+        }
+        state.validate_all()?;
+        Ok(Self {
+            state: Arc::new(state),
+            ids,
+            undo: UndoStack::default(),
+            bus: change::ChangeBus::default(),
+        })
+    }
+
     /// An immutable view of the current state. O(1); the snapshot stays
     /// valid and unchanged while the document moves on.
     #[must_use]
