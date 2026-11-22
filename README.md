@@ -5,9 +5,10 @@ follows Siemens NX's interaction grammar, with every application's data in
 one `.pxp` part file. Working name; licensed **LGPL-2.1-or-later**
 (ADR-0001).
 
-> **Status: pre-alpha, Stage 0 (Foundations), session 2.** There is no
-> graphical application yet. What exists is listed below and by
-> `pxp-cli status`. Nothing here claims parity with any commercial system.
+> **Status: pre-alpha. Stage 0 (Foundations) is complete and waiting for
+> approval at its gate** (`docs/verification/stage-0.md`). What exists is
+> listed below and by `pxp-cli status`. Nothing here claims parity with any
+> commercial system.
 
 ## What works today
 
@@ -41,9 +42,23 @@ one `.pxp` part file. Working name; licensed **LGPL-2.1-or-later**
   calculations, and a STEP stress test for real parts (the NIST MBE PMI
   test models), graded against the files' own validation properties and
   boolean identities.
+- **Desktop application** (`pxp`, from `pxp-app`, `pxp-ui`, `pxp-render`):
+  an NX-style shell (data-driven ribbon, dockable navigators, selection
+  filter, snap toolbar, Command Finder, feature dialogs with Specify Point
+  and MB2 = OK, Information, customer defaults, remappable shortcuts, light
+  and dark themes) and a wgpu viewer (NX mouse grammar, GPU picking, edges,
+  silhouettes, section plane, standard and named views, software fallback).
+  User guide: `docs/user-guide/`.
+- **Second kernel** (`pxp-kernel-occt`): OCCT 7.8.1 in a worker process,
+  measured against SolidCraft on 200 parts. ADR-0004 recommends OCCT as
+  the primary kernel.
 - **CLI** (`pxp-cli`): `part` (new, block, cylinder, cone, sphere, info,
-  verify), `bakeoff`, `stepstress`, `apps`, `commands`, `find`, `shortcut`, `eval`,
-  `status`, `version`.
+  verify, recover), `journal record|replay`, `mcp` (MCP server over stdio),
+  `bakeoff`, `stepstress`, `crashes`, `apps`, `commands`, `find`,
+  `shortcut`, `eval`, `status`, `version`.
+- **Robustness**: write-ahead recovery journal, autosave, local crash
+  reports (nothing sent anywhere), criterion benchmarks with budgets, fuzz
+  targets.
 
 ## Build and try
 
@@ -57,6 +72,8 @@ cargo run -p pxp-cli -- part block bracket.pxp --size 10 20 30
 cargo run -p pxp-cli -- part info bracket.pxp     # hash, volume, area from the stored B-rep
 cargo run -p pxp-cli -- part verify bracket.pxp   # reopen, re-import, regenerate: identical
 cargo run -p pxp-cli -- bakeoff --corpus synthetic
+cargo run --release -p pxp-app -- bracket.pxp        # the desktop shell
+cargo run --release -p pxp-app -- bench-orbit        # 5M-triangle viewport benchmark
 python3 tools/fetch_nist_step.py nist                 # NIST STEP models, checksummed
 cargo run --release -p pxp-cli -- stepstress nist/current/nist_ctc_01_asme1_ap242-e1.stp
 python3 tools/check_repo.py      # layering, unsafe, docs and SPDX policy
@@ -66,8 +83,10 @@ The toolchain is pinned in `rust-toolchain.toml` (Rust 1.97.0). The first
 build compiles SolidCore (about 40 MB of Rust) and needs roughly 6 GB of
 memory; on a small machine build with `-j1`.
 
-Binaries that link `pxp-kernel-native` (today `pxp-cli`) are conveyed under
-LGPL-3.0, because SolidCore is Apache-2.0 only (ADR-0001).
+Binaries that link `pxp-kernel-native` (today `pxp-cli` and `pxp`) are
+conveyed under LGPL-3.0, because SolidCore is Apache-2.0 only. `pxp` is
+also conveyed under LGPL-3.0 because its window stack (winit) is
+Apache-2.0 only (ADR-0001).
 
 ## Layout
 
@@ -78,7 +97,11 @@ LGPL-3.0, because SolidCore is Apache-2.0 only (ADR-0001).
 - `docs/STATUS.md`: what is done, in progress, blocked, and decided.
 - `docs/adr/`: architecture decision records.
 - `docs/design/`: design notes with diagrams for each logic system.
-- `tools/`: repository policy checks.
+- `docs/user-guide/`, `docs/developer-guide.md`: how to use and extend it.
+- `docs/verification/`: the verification packet for each gate.
+- `prototypes/`: the ADR-0002 UI toolkit prototypes.
+- `tools/`: repository policy checks, CI helpers, NIST fetcher, kernel
+  comparison.
 
 ## Reference projects
 
