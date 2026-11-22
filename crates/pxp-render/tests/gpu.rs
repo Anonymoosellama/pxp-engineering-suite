@@ -2,6 +2,19 @@
 //! Headless GPU tests of the viewport: they run wherever an adapter exists
 //! (a software rasteriser is enough: lavapipe on Linux CI, WARP on Windows)
 //! and skip, saying so, where none does.
+//!
+//! Crash tracing. A driver crash kills the test process, and libtest's
+//! captured output dies with it, so the log cannot say what was running.
+//! Two aids, both visible with `-- --nocapture` (CI's diagnostic steps
+//! pass it; normal runs stay quiet because output is captured):
+//!
+//! - `trace` prints a `[gpu-test <test name>] <step>` line before each GPU
+//!   step (adapter, upload, render, read-back, pick), so the last line in
+//!   the log names the step that crashed.
+//! - `install_log` sends wgpu's own log records (including the Direct3D 12
+//!   debug layer's messages, which wgpu forwards when validation is on) to
+//!   stderr. Level from `PXP_GPU_LOG` (`off`, `error`, `warn`, `info`,
+//!   `debug`, `trace`); default `warn`.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -10,12 +23,70 @@
 )]
 
 use pxp_render::{
-    Camera, DisplaySettings, GpuContext, MeshInput, Picked, Scene, StandardView, Viewport,
+    Camera, DisplaySettings, GpuContext, Hit, MeshInput, Picked, RenderError, Scene, StandardView,
+    Viewport,
 };
 
+/// Prints one step marker. The test name comes from the thread name, which
+/// libtest sets to the test's name.
+fn trace(step: &str) {
+    let thread = std::thread::current();
+    eprintln!("[gpu-test {}] {step}", thread.name().unwrap_or("?"));
+}
+
+/// A minimal `log` backend: every record at or above the level goes to
+/// stderr as `[LEVEL target] message`. `eprintln!` is unbuffered, so a
+/// record written just before a crash still reaches the log.
+struct StderrLog(log::LevelFilter);
+
+impl log::Log for StderrLog {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= self.0
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            eprintln!("[{} {}] {}", record.level(), record.target(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+/// Installs `StderrLog` once per test process (tests run on several threads
+/// and `log` accepts only one logger, so later calls do nothing).
+fn install_log() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let level = std::env::var("PXP_GPU_LOG")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(log::LevelFilter::Warn);
+        // `log` wants a `&'static` logger; leaking one small struct for the
+        // life of the test process is the usual way to get it.
+        let logger: &'static StderrLog = Box::leak(Box::new(StderrLog(level)));
+        if log::set_logger(logger).is_ok() {
+            log::set_max_level(level);
+        }
+    });
+}
+
 fn gpu() -> Option<GpuContext> {
+    install_log();
+    trace("create instance, adapter and device");
     match GpuContext::headless() {
-        Ok(c) => Some(c),
+        Ok(c) => {
+            // Backend, driver and device type: which path the crash is on.
+            trace(&format!(
+                "adapter {:?} backend {:?} type {:?} driver {:?} {:?}",
+                c.adapter.name,
+                c.adapter.backend,
+                c.adapter.device_type,
+                c.adapter.driver,
+                c.adapter.driver_info
+            ));
+            Some(c)
+        }
         Err(e) => {
             eprintln!("skipping GPU test: {e}");
             None
@@ -77,12 +148,47 @@ fn box_mesh() -> MeshInput {
 
 fn setup(ctx: &GpuContext) -> (Scene, Viewport, Camera) {
     let mut scene = Scene::new();
+    trace("upload the box mesh");
     scene.add(ctx, &box_mesh(), [0.6, 0.65, 0.7, 1.0]);
     let mut cam = Camera::default();
     cam.set_view(StandardView::Top);
     let (lo, hi) = scene.bounds().unwrap();
     cam.fit(lo, hi, 1.0);
-    (scene, Viewport::new(ctx), cam)
+    trace("create the viewport (shaders and pipelines)");
+    let vp = Viewport::new(ctx);
+    (scene, vp, cam)
+}
+
+// The three viewport calls the tests make, each announced by `trace` so a
+// crash log names the call that was running.
+
+fn render(
+    vp: &mut Viewport,
+    ctx: &GpuContext,
+    scene: &Scene,
+    cam: &Camera,
+    s: &DisplaySettings,
+    size: [u32; 2],
+) {
+    trace(&format!("render {}x{}", size[0], size[1]));
+    vp.render(ctx, scene, cam, s, size);
+}
+
+fn read_pixels(vp: &Viewport, ctx: &GpuContext) -> Result<(Vec<u8>, [u32; 2]), RenderError> {
+    trace("read back the colour target");
+    vp.read_pixels(ctx)
+}
+
+fn pick(
+    vp: &mut Viewport,
+    ctx: &GpuContext,
+    scene: &Scene,
+    cam: &Camera,
+    s: &DisplaySettings,
+    at: [u32; 2],
+) -> Result<Option<Hit>, RenderError> {
+    trace(&format!("pick at {at:?}"));
+    vp.pick(ctx, scene, cam, s, at)
 }
 
 fn pixel(px: &[u8], size: [u32; 2], x: u32, y: u32) -> [u8; 4] {
@@ -93,12 +199,11 @@ fn pixel(px: &[u8], size: [u32; 2], x: u32, y: u32) -> [u8; 4] {
 #[test]
 fn a_box_renders_over_the_gradient_and_picks_its_top_face() {
     let Some(ctx) = gpu() else { return };
-    eprintln!("adapter: {:?}", ctx.adapter.name);
     let (scene, mut vp, cam) = setup(&ctx);
     let size = [128, 128];
     let s = DisplaySettings::LIGHT;
-    vp.render(&ctx, &scene, &cam, &s, size);
-    let (px, got) = vp.read_pixels(&ctx).unwrap();
+    render(&mut vp, &ctx, &scene, &cam, &s, size);
+    let (px, got) = read_pixels(&vp, &ctx).unwrap();
     assert_eq!(got, size);
     // Background: the top-left corner is the gradient's darker top colour,
     // the bottom-left the lighter one.
@@ -112,13 +217,12 @@ fn a_box_renders_over_the_gradient_and_picks_its_top_face() {
     let centre = pixel(&px, size, 64, 64);
     assert_ne!(centre, pixel(&px, size, 64, 0), "the box covers the centre");
     // Looking down −Z, the face under the centre is +Z (face 1).
-    let picked = vp
-        .pick(&ctx, &scene, &cam, &s, [64, 64])
+    let picked = pick(&mut vp, &ctx, &scene, &cam, &s, [64, 64])
         .unwrap()
         .map(|h| h.picked);
     assert_eq!(picked, Some(Picked { body: 0, face: 1 }));
     assert_eq!(
-        vp.pick(&ctx, &scene, &cam, &s, [1, 1])
+        pick(&mut vp, &ctx, &scene, &cam, &s, [1, 1])
             .unwrap()
             .map(|h| h.picked),
         None,
@@ -140,10 +244,10 @@ fn edges_and_silhouettes_outline_the_box() {
     let mut plain = DisplaySettings::LIGHT;
     plain.edges = false;
     plain.silhouettes = false;
-    vp.render(&ctx, &scene, &cam, &plain, size);
-    let none = dark(&vp.read_pixels(&ctx).unwrap().0);
-    vp.render(&ctx, &scene, &cam, &DisplaySettings::LIGHT, size);
-    let (px, _) = vp.read_pixels(&ctx).unwrap();
+    render(&mut vp, &ctx, &scene, &cam, &plain, size);
+    let none = dark(&read_pixels(&vp, &ctx).unwrap().0);
+    render(&mut vp, &ctx, &scene, &cam, &DisplaySettings::LIGHT, size);
+    let (px, _) = read_pixels(&vp, &ctx).unwrap();
     let outlined = dark(&px);
     if let Some(dir) = std::env::var_os("PXP_TEST_SHOTS") {
         let img = image::RgbaImage::from_raw(size[0], size[1], px.clone()).unwrap();
@@ -168,13 +272,12 @@ fn a_section_plane_cuts_the_box_away() {
     let right_of_centre = [40, 32]; // x ≈ 115
     let left_of_centre = [24, 32]; // x ≈ 105
     assert_eq!(
-        vp.pick(&ctx, &scene, &cam, &s, right_of_centre)
-            .unwrap_or(None),
+        pick(&mut vp, &ctx, &scene, &cam, &s, right_of_centre).unwrap_or(None),
         None
     );
-    vp.render(&ctx, &scene, &cam, &s, size);
+    render(&mut vp, &ctx, &scene, &cam, &s, size);
     assert_eq!(
-        vp.pick(&ctx, &scene, &cam, &s, right_of_centre)
+        pick(&mut vp, &ctx, &scene, &cam, &s, right_of_centre)
             .unwrap()
             .map(|h| h.picked),
         None,
@@ -184,7 +287,7 @@ fn a_section_plane_cuts_the_box_away() {
     // through the opening only where nothing else is: the kept half still
     // picks its top face.
     assert_eq!(
-        vp.pick(&ctx, &scene, &cam, &s, left_of_centre)
+        pick(&mut vp, &ctx, &scene, &cam, &s, left_of_centre)
             .unwrap()
             .map(|h| h.picked),
         Some(Picked { body: 0, face: 1 })
@@ -194,6 +297,7 @@ fn a_section_plane_cuts_the_box_away() {
 #[test]
 fn the_orbit_benchmark_runs_and_reports() {
     let Some(ctx) = gpu() else { return };
+    trace("orbit benchmark: 20k triangles, 3 frames at 160x120");
     let r = pxp_render::bench::orbit(&ctx, 20_000, 3, [160, 120]).unwrap();
     assert!(
         r.triangles >= 15_000 && r.frames == 3 && r.fps() > 0.0,
@@ -208,13 +312,13 @@ fn the_selected_face_is_drawn_in_the_selection_colour() {
     let size = [64, 64];
     let mut s = DisplaySettings::LIGHT;
     s.highlight = Some((0, Some(1)));
-    vp.render(&ctx, &scene, &cam, &s, size);
-    let (px, _) = vp.read_pixels(&ctx).unwrap();
+    render(&mut vp, &ctx, &scene, &cam, &s, size);
+    let (px, _) = read_pixels(&vp, &ctx).unwrap();
     let c = pixel(&px, size, 32, 32);
     assert!(c[0] > 200 && c[2] < 120, "orange at the centre: {c:?}");
     s.highlight = Some((0, Some(0))); // the hidden bottom face
-    vp.render(&ctx, &scene, &cam, &s, size);
-    let (px, _) = vp.read_pixels(&ctx).unwrap();
+    render(&mut vp, &ctx, &scene, &cam, &s, size);
+    let (px, _) = read_pixels(&vp, &ctx).unwrap();
     let c = pixel(&px, size, 32, 32);
     assert!(
         c[0] < 230 || c[2] > 150,
@@ -227,11 +331,17 @@ fn a_pick_returns_the_point_on_the_face() {
     let Some(ctx) = gpu() else { return };
     let (scene, mut vp, cam) = setup(&ctx);
     let size = [128, 128];
-    vp.render(&ctx, &scene, &cam, &DisplaySettings::LIGHT, size);
-    let hit = vp
-        .pick(&ctx, &scene, &cam, &DisplaySettings::LIGHT, [64, 64])
-        .unwrap()
-        .unwrap();
+    render(&mut vp, &ctx, &scene, &cam, &DisplaySettings::LIGHT, size);
+    let hit = pick(
+        &mut vp,
+        &ctx,
+        &scene,
+        &cam,
+        &DisplaySettings::LIGHT,
+        [64, 64],
+    )
+    .unwrap()
+    .unwrap();
     // Looking down on the box's top face (z = 310) at its centre (110, 215).
     let [x, y, z] = hit.point;
     assert!((z - 310.0).abs() < 0.05, "on the top face: {:?}", hit.point);

@@ -19,3 +19,4 @@ pollster = { workspace = true }
 
 [dev-dependencies]
 image = { workspace = true }
+log = { workspace = true }

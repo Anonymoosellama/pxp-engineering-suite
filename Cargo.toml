@@ -47,6 +47,10 @@ bytemuck = { version = "1", features = ["derive"] }
 pollster = "1"
 # PNG screenshots of the viewport and shell; MIT OR Apache-2.0.
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The logging facade wgpu reports through; the GPU tests print its records
+# so a driver crash leaves wgpu's last messages in the CI log. Already in
+# the tree through wgpu. MIT OR Apache-2.0.
+log = "0.4"
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 # SolidCraft's geometry kernel, built on SolidCore (ADR-0004 bake-off
 # candidate). Not published on crates.io, so a git dependency pinned to one
