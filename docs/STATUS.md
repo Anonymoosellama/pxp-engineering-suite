@@ -2,14 +2,16 @@
 
 The agent keeps this file true at all times; the user confirms gate outcomes.
 
-Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
-(private). CI: `.github/workflows/ci.yml`, runs on every push.
+Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>.
+CI: `.github/workflows/ci.yml`, runs on every push. Session 3's work is on
+branch `stage-0-complete` (pushed 2026-11-22; pull request into `main` not
+yet opened).
 
 ## Gates
 
 | Stage | Scope | State |
 | --- | --- | --- |
-| 0 | Foundations | **Complete, at the gate** (sessions 1-3). Verification packet: `docs/verification/stage-0.md`. Waiting for "Stage 0 approved" |
+| 0 | Foundations | **Complete, at the gate** (sessions 1-3). Verification packet: `docs/verification/stage-0.md`. CI on branch `stage-0-complete`: green on the five build targets except one macOS packaging step, fixed in the latest commit (see session 3, part 3). Waiting for "Stage 0 approved" |
 | 1 | Modeling (CAD, assemblies) | Not started; gated on "Stage 0 approved" |
 | 2 | Drafting | Not started |
 | 3 | Manufacturing core | Not started |
@@ -30,6 +32,26 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0H | ADR-0002 UI prototypes, NX-style shell, wgpu viewer | **Done, session 3**: egui + egui_dock chosen over iced (Slint excluded by licence); `pxp` shell and `pxp-render` viewer |
 | 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | **Done, session 3** |
 | 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | **Done, session 3** (packaging and long fuzzing as CI jobs, not yet run) |
+
+## Session 3, part 3 (2026-11-22) — first CI on the pushed branch
+
+The user attached the repository with push access; `stage-0-complete` was
+pushed at `b4d62b7` and CI ran on it for the first time. Fixes since, all
+on that branch:
+
+| Run | Commit | Result | Action |
+| --- | --- | --- | --- |
+| 45053831919 | `b4d62b7` | 17 / 20 jobs green. `clippy + test + doc` failed on windows-2025 and windows-11-arm: every GPU test panicked creating the `silhouettes` pipeline (FXC X3507, "not all control paths return a value"); `determinism` skipped | `9cd0f3b`: `sil_fs` discards inside an `if` and returns last; `tests/shader_source.rs` checks that shape on every OS. The desktop viewport would have panicked the same way on Windows wherever wgpu picks Direct3D 12 |
+| 45059312172 | `9cd0f3b` | windows-2025 green. windows-11-arm: the GPU test process crashed (0xc0000005, access violation); re-run (attempt 2) crashed the same way | `7bdcbf5`, `d3da4f7`: step markers and wgpu's log in the GPU tests, a diagnostic step after a failed test step |
+| 45063743207 | `d8fee62` | **User decision: Windows ARM64 out of the build for now.** The `windows-arm-gpu-diagnostics` job (not part of the build) showed the six GPU tests pass one at a time with validation on and off, and crash only in parallel, with four Direct3D 12 devices rendering at once on WARP | `07e2c37`: the GPU tests take turns on the device (one device alive at a time, as in the product) |
+| 45064274547 | `07e2c37` | 19 / 20 jobs green: `clippy + test + doc` on all five build targets, `determinism` (cross-OS geometry hashes), the OCCT jobs and their cross-OS hashes, benchmarks, packaging on Linux, Windows and macOS x86_64, and the Windows ARM64 diagnostics job in all three modes, parallel included. One failure: `package (macos-15)`, hdiutil "No space left on device" on the image's own volume (same step green on the two runs before) | The macOS package step gives hdiutil an explicit `-size` (bundle plus 20 % and 20 MB) |
+
+**Windows ARM64.** Out of the `test` matrix and the nightly NIST matrix
+(it was never in `package` or `occt`); see "Decisions taken" and
+"Temporary deviations". The crash cause is fixed in the tests, so it can
+return to the matrix whenever the user wants; the non-blocking
+`windows-arm-gpu-diagnostics` job stays until then or until the user
+drops it.
 
 ## Session 3, part 2 (2026-11-21 to 22) — finish Stage 0
 
@@ -309,9 +331,9 @@ clean.
 
 ## Blocked
 
-- **Pushing from the agent's sandbox** was refused in session 3, so none of
-  the session-3 commits has run in CI. Packaging, the six-target tests,
-  cross-OS hashes, the OCCT jobs and long fuzzing wait for a push.
+- Nightly jobs (long fuzzing, full bake-off, NIST on every OS) run only
+  from the default branch, so they start once `stage-0-complete` is merged
+  into `main`.
 - `nist.gov` is refused by the shell's egress proxy. Not blocking: NIST's
   own GitHub repository serves the same files, pinned by commit and
   checksum.
@@ -327,7 +349,11 @@ See the verification packet, section 5:
 - D3 Code-signing certificates.
 - D4 Fuzzing CPU-hours.
 - D5 Accept ADR-0002 and ADR-0004.
-- D6 Push the bundle, or grant push access.
+- D6 Done 2026-11-22: push access granted, branch `stage-0-complete`
+  pushed. Remaining: open the pull request into `main` (the session's
+  GitHub CLI token is invalid, so the agent cannot open it).
+- D7 Windows ARM64: bring it back into the build (the crash cause is
+  fixed), or keep it out and drop the diagnostics job.
 
 Optional, before Stage 4: whether user-written post processors that embed
 library layers should get an explicit licence exception.
@@ -335,6 +361,9 @@ library layers should get an explicit licence exception.
 ## Decisions taken
 
 - ADR-0001: LGPL-2.1-or-later (user, 2026-11-20).
+- Windows ARM64 out of the build for now (user, 2026-11-22): removed from
+  the CI `test` matrix and the nightly NIST matrix; a separate,
+  non-blocking diagnostics job runs the GPU tests there.
 - ADR-0006: document core design and `Application` trait additions (agent).
 - ADR-0007: coherent mm-t-s internal units; NX degree convention for bare
   numbers in trig (agent).
@@ -366,5 +395,6 @@ signed installers, coverage in CI).
 | --- | --- | --- | --- |
 | Typed errors via thiserror | Session 1 crates keep hand-written `Display` + `Error` impls; session 2 crates (`pxp-format`) use thiserror | Session 1 had no crates.io | Optional: equivalent; convert when those crates are next touched |
 | Fuzzers' CPU-hours | 10-minute stable soak here; cargo-fuzz CPU-hours only in the nightly CI job | No nightly toolchain in the sandbox | First nightly run after a push |
-| Signed builds for three OSes | Unsigned package jobs, not yet run | Push refused; certificates needed (D3) | D3 and D6 |
+| Signed builds for three OSes | Unsigned package jobs (Linux .tar.gz and .deb, Windows .zip, macOS .dmg on arm64 and x86_64), run in CI since 2026-11-22 | Certificates needed (D3) | D3 |
+| Targets include Windows 10/11 ARM64 | Windows ARM64 is not built, tested or packaged | User decision 2026-11-22, after a GPU-test crash on that runner (cause since fixed) | The user brings it back (D7) |
 | Toolchain 1.97.0 pinned | Local checks run on the sandbox's stable toolchain; CI uses the pinned one | rustup cannot download 1.97.0 in the sandbox | Sandbox network allows static.rust-lang.org |

@@ -12,7 +12,7 @@
 
 | Sub-stage | Delivered | Evidence |
 | --- | --- | --- |
-| 0A Repository and CI | Workspace with every crate from the architecture; layer, unsafe, docs and SPDX checks; CI on six targets (fmt, clippy, tests, rustdoc, deny, fuzz smoke, bake-off hashes, benchmarks, packaging, OCCT on three OSes); nightly workflow (NIST STEP, long fuzzing, full bake-off on both kernels) | `.github/workflows/`, `tools/check_repo.py` (0 problems) |
+| 0A Repository and CI | Workspace with every crate from the architecture; layer, unsafe, docs and SPDX checks; CI on five targets (Linux x86_64/aarch64, Windows x64, macOS arm64/x86_64; Windows ARM64 out of the build for now, user decision 2026-11-22) running fmt, clippy, tests, rustdoc, deny, fuzz smoke, bake-off hashes, benchmarks, packaging and OCCT on three OSes; nightly workflow (NIST STEP, long fuzzing, full bake-off on both kernels) | `.github/workflows/`, `tools/check_repo.py` (0 problems) |
 | 0B Foundations | pxp-units (typed quantities, unit expressions), pxp-math, pxp-platform (locks, atomic replace), pxp-compute, pxp-diag (error reports, **local crash reporter**) | crate tests |
 | 0C Document core | Object store, typed unit-aware properties, expressions with dependency tracking, parallel recompute, transactions, undo/redo within a memory cap, change bus, snapshots on **persistent maps** (O(1) clone) | `pxp-doc` tests; benchmarks in section 6 |
 | 0D Contracts | Kernel trait with `OpResult`/`TopoHistory` and `KernelHost`; `Application` trait and registry; all six applications registered, with unbuilt commands greyed and tooltipped "Planned for Stage N." | `pxp-cli commands`; ribbon screenshots |
@@ -37,9 +37,10 @@
 
 ## 2. Builds
 
-No CI-built packages exist yet. To produce them, apply the hand-over
-bundle and push; the `package` job then uploads one artefact per OS. To
-build locally:
+Branch `stage-0-complete` is pushed, and every CI run's `package` job
+uploads one unsigned artefact per target: `.tar.gz` and `.deb` (Linux),
+`.zip` (Windows x64), `.dmg` (macOS arm64 and x86_64), on the run's
+Summary page. To build locally:
 
 ```sh
 cargo build --release -p pxp-app -p pxp-cli
@@ -80,7 +81,8 @@ pass `pxp-cli part verify`.
 
 | Severity | Item |
 | --- | --- |
-| High | Nothing from session 3 is CI-confirmed (push refused): six-target tests, cross-OS hashes, packaging and the OCCT jobs have not run. |
+| Medium | Windows ARM64 is not built, tested or packaged (user decision 2026-11-22). Its GPU-test crash (several Direct3D 12 devices at once on WARP) is fixed by running the GPU tests one device at a time; returning it to the build is decision D7. |
+| Medium | The nightly jobs (long fuzzing, full bake-off, NIST on every OS) run only from `main`; they start once `stage-0-complete` is merged. |
 | High | The OCCT backend uses a Python worker (OCP). It must not ship; a native worker is ADR-0004's condition 1. |
 | Medium | OCCT drifts up to 4.6e-5 relative on imported freeform solids, beyond the 1e-6 STEP round-trip target (decision D1). |
 | Medium | The shell defaults to the SolidCraft kernel (`--kernel occt` selects OCCT); switching the default is Stage 1's first task. |
@@ -101,7 +103,8 @@ pass `pxp-cli part verify`.
 | D3 | Code-signing certificates (Windows Authenticode, Apple Developer ID) | Provide them as CI secrets; until then, unsigned packages |
 | D4 | Fuzzing CPU-hours for the gate | 1 h per target per night (2 targets); grows with each new parser |
 | D5 | Accept ADR-0002 (egui + egui_dock) and ADR-0004 (OCCT primary, SolidCraft oracle) | Accept with ADR-0004's conditions |
-| D6 | Push the hand-over bundle, or grant the agent push access | Needed for any CI evidence |
+| D6 | Push the hand-over bundle, or grant the agent push access | Done 2026-11-22 (push access granted). Remaining: open the pull request from `stage-0-complete` into `main` |
+| D7 | Windows ARM64 back in the build, or out with the diagnostics job removed | Bring it back: the crash cause is fixed and the diagnostics job passes there |
 
 ## 6. Results
 
@@ -147,7 +150,7 @@ New in session 3, part 2:
 | Bake-off hashes, repeated runs, both kernels | 161/161 identical (SolidCraft), 161/161 (OCCT) |
 | NIST STEP hashes, repeated runs | 39/39 (SolidCraft), 39/39 (OCCT) |
 | Cross-OS, SolidCraft core corpus (session 2 CI) | 65/66 identical on six targets; case 3460 differs on macOS only |
-| Cross-OS, OCCT and session-3 work | Not run (D6) |
+| Cross-OS, session-3 work (CI run 45064274547) | `determinism` (SolidCraft core corpus) and `OCCT hashes identical across OSes` green on the five build targets |
 | Journal replay (`primitives-mm-and-inch.pxj`, 25 hashes) | identical |
 | Codec soak | 1.47 × 10⁹ inputs, 0 failures |
 
