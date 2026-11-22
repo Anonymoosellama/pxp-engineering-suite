@@ -169,7 +169,12 @@ impl<'d> Tx<'d> {
             let leaves: Vec<ObjectId> = doomed
                 .iter()
                 .copied()
-                .filter(|d| self.work.dependants.get(d).is_none_or(BTreeSet::is_empty))
+                .filter(|d| {
+                    self.work
+                        .dependants
+                        .get(d)
+                        .is_none_or(imbl::OrdSet::is_empty)
+                })
                 .collect();
             if leaves.is_empty() {
                 // Unreachable for an acyclic graph; refuse rather than loop.

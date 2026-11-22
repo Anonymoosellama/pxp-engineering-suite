@@ -21,5 +21,10 @@ rusqlite = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 pxp-compute = { workspace = true }
 proptest = { workspace = true }
+
+[[bench]]
+name = "file"
+harness = false

@@ -399,12 +399,23 @@ fn autosave_survives_a_lost_journal_and_goes_stale_on_save() {
     let t0 = std::time::Instant::now();
     let mut auto = Autosaver::new(Duration::from_mins(1), d.generation(), t0);
     // Nothing changed: nothing to write, however late.
-    assert!(auto.tick(&file, &d, t0 + Duration::from_mins(10)).unwrap().is_none());
+    assert!(
+        auto.tick(&file, &d, t0 + Duration::from_mins(10))
+            .unwrap()
+            .is_none()
+    );
     d.transact("Add depth", |tx| tx.set_expression("depth", "7mm"))
         .unwrap();
     // Changed, but the interval has not passed.
-    assert!(auto.tick(&file, &d, t0 + Duration::from_secs(10)).unwrap().is_none());
-    let written = auto.tick(&file, &d, t0 + Duration::from_secs(61)).unwrap().unwrap();
+    assert!(
+        auto.tick(&file, &d, t0 + Duration::from_secs(10))
+            .unwrap()
+            .is_none()
+    );
+    let written = auto
+        .tick(&file, &d, t0 + Duration::from_secs(61))
+        .unwrap()
+        .unwrap();
     assert!(written.exists());
     // The crash, and the journal is lost too (the autosave's reason to exist).
     drop(file);
@@ -412,7 +423,10 @@ fn autosave_survives_a_lost_journal_and_goes_stale_on_save() {
     let opened = PartFile::open(&path).unwrap();
     assert!(opened.recovery.is_none());
     assert_eq!(opened.autosave.as_deref(), Some(written.as_path()));
-    assert!(opened.document.snapshot().expression("depth").is_none(), "saved state first");
+    assert!(
+        opened.document.snapshot().expression("depth").is_none(),
+        "saved state first"
+    );
     let restored = opened.file.autosaved_document().unwrap();
     assert_eq!(
         restored.snapshot().expression_value("depth"),
@@ -432,13 +446,17 @@ fn an_autosave_of_another_save_is_ignored() {
     let path = dir.join("part.pxp");
     let mut d = sample_doc();
     let mut file = PartFile::create(&path, PartMeta::millimetre(), &d).unwrap();
-    d.transact("Edit", |tx| tx.set_expression("depth", "1mm")).unwrap();
+    d.transact("Edit", |tx| tx.set_expression("depth", "1mm"))
+        .unwrap();
     let written = file.autosave(&d).unwrap();
     let stale = std::fs::read(&written).unwrap();
     file.save(&d, PartMeta::millimetre()).unwrap(); // new save token
     std::fs::write(&written, stale).unwrap(); // the old autosave comes back
     drop(file);
     let opened = PartFile::open(&path).unwrap();
-    assert!(opened.autosave.is_none(), "an autosave of an earlier save is not offered");
+    assert!(
+        opened.autosave.is_none(),
+        "an autosave of an earlier save is not offered"
+    );
     assert!(!written.exists(), "and it is removed");
 }

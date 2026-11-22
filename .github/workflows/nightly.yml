@@ -7,11 +7,17 @@
 #     NIST releases, tools/fetch_nist_step.py) through `pxp-cli stepstress`
 #     on every OS, then the same cross-OS hash comparison as ci.yml.
 #
+#   - fuzz-long: every cargo-fuzz target for 1 CPU-hour (the Stage 0 gate's
+#     "fuzzers ran for the agreed number of CPU-hours"; 1 h per target is
+#     the proposed figure, a decision for the user), plus the stable codec
+#     soak for 30 minutes.
+#   - bakeoff-full: the whole bake-off corpus (including the slow Menger
+#     sponge) on both kernels, uploaded as the kernel comparison artefact.
+#
 # Failing files are findings, reported in the uploaded report, not job
 # failures: the job fails only if the run itself breaks, and `determinism`
 # fails on any cross-OS hash difference not listed in
-# tools/ci/known-nist-differences.txt. Long fuzzing and `bakeoff
-# --include-slow` join this file when they are scheduled.
+# tools/ci/known-nist-differences.txt.
 
 name: nightly
 
@@ -79,3 +85,56 @@ jobs:
           pattern: bakeoff-hashes-*
       - name: Compare every OS with Linux x86_64
         run: python3 tools/ci/compare_hashes.py tools/ci/known-nist-differences.txt ubuntu-24.04 bakeoff-hashes-*
+
+  fuzz-long:
+    name: long fuzzing (1 CPU-hour per target)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --locked
+      - name: decode_object (1 h)
+        run: cargo +nightly fuzz run decode_object -- -max_total_time=3600 -rss_limit_mb=2048
+      - name: decode_props (1 h)
+        run: cargo +nightly fuzz run decode_props -- -max_total_time=3600 -rss_limit_mb=2048
+      - name: Codec soak on stable (30 min)
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          PXP_SOAK_SECS=1800 cargo test --release -p pxp-format --test codec_soak -- --nocapture
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+
+  bakeoff-full:
+    name: full bake-off, both kernels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install OCP (OCCT 7.8.1 Python bindings)
+        run: python -m pip install "cadquery-ocp==7.8.1.1"
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p pxp-cli --locked
+      - name: Both kernels, every corpus, slow cases included
+        run: |
+          export PXP_OCCT_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+          for k in native occt; do
+            target/release/pxp-cli bakeoff --kernel $k --corpus all --include-slow --repeat 2 --format markdown > bakeoff-$k.md
+            target/release/pxp-cli bakeoff --kernel $k --corpus all --include-slow --repeat 1 --format details --quiet > bakeoff-$k.details
+          done
+          python3 tools/compare_bakeoff.py primitive bakeoff-native.md bakeoff-native.details bakeoff-occt.md bakeoff-occt.details >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bakeoff-both-kernels
+          path: bakeoff-*

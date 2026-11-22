@@ -32,6 +32,10 @@ rusqlite = { version = "0.43", features = ["bundled", "backup"] }
 thiserror = "2"
 # The OCCT worker protocol (JSON lines); MIT OR Apache-2.0.
 serde_json = "1"
+# Persistent (structurally shared) maps for document snapshots, ADR-0006; MPL-2.0.
+imbl = "7"
+# Benchmarks with budgets (master prompt: tracked in CI); MIT OR Apache-2.0.
+criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
 rayon = "1.12"
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 # SolidCraft's geometry kernel, built on SolidCore (ADR-0004 bake-off

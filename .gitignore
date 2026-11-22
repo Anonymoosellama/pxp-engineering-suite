@@ -2,3 +2,5 @@
 **/*.rs.bk
 *.pxp-journal
 .DS_Store
+# Prototype build outputs (each prototype is its own workspace).
+/prototypes/*/target

@@ -3,28 +3,27 @@
 
 use crate::expr::{self, VALUE_PROP};
 use crate::{DocError, Object, ObjectId, ObjectKind, ObjectState, Value};
+use imbl::{OrdMap, OrdSet};
 use pxp_units::Quantity;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// The complete state of a document at one generation.
 ///
-/// Objects are `Arc`-shared, so cloning a `DocState` copies only pointers:
-/// that clone is how a transaction gets a private working copy (rollback =
-/// drop it) and how a reader gets an immutable snapshot.
-///
-/// Cost note: a clone is O(n) pointer copies for n objects. That is cheap at
-/// Stage 0 scale (100 000 objects ≈ a millisecond) and keeps the code simple
-/// and obviously correct. ADR-0006 plans a persistent map (O(log n) per
-/// change) once crates.io is reachable; the public API does not change.
+/// The maps are persistent (`imbl`'s structurally shared B-trees, ADR-0006):
+/// cloning a `DocState` is O(1) and shares every node, and a change to the
+/// clone copies only the O(log n) nodes on its path. That clone is how a
+/// transaction gets a private working copy (rollback = drop it), how undo
+/// and recompute work on a copy, and how a reader gets an immutable
+/// snapshot, so none of them costs time proportional to the document.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DocState {
-    pub(crate) objects: BTreeMap<ObjectId, Arc<Object>>,
+    pub(crate) objects: OrdMap<ObjectId, Arc<Object>>,
     /// Reverse dependency index: `dependants[x]` = objects whose `deps`
     /// name `x`. Maintained only by [`DocState::replace_raw`].
-    pub(crate) dependants: BTreeMap<ObjectId, BTreeSet<ObjectId>>,
+    pub(crate) dependants: OrdMap<ObjectId, OrdSet<ObjectId>>,
     /// Expression name → expression object. Maintained by `replace_raw`.
-    pub(crate) expr_names: BTreeMap<String, ObjectId>,
+    pub(crate) expr_names: OrdMap<String, ObjectId>,
     /// Incremented on every commit, undo and redo.
     pub(crate) generation: u64,
 }

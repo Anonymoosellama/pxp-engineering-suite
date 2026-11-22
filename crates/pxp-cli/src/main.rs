@@ -13,28 +13,31 @@
 //! | `pxp-cli part block\|cylinder\|cone\|sphere FILE …` | Adds a primitive: parameters become expressions, the Modeling application regenerates it through the kernel, the file is saved (see `part help`) |
 //! | `pxp-cli part info FILE` | Features, states, kernels, geometry hashes, and mass properties read from the stored exact B-reps |
 //! | `pxp-cli part verify FILE` | Re-imports every stored B-rep and regenerates every feature: hashes and bytes must match (exit 1 otherwise) |
-//! | `pxp-cli bakeoff [--corpus …] [--format summary\|markdown\|hashes]` | Runs the kernel bake-off corpus against the native backend |
+//! | `pxp-cli bakeoff [--kernel native\|occt] [--corpus all\|core\|synthetic\|solidcraft\|generated] [--format summary\|markdown\|details\|hashes]` | Runs the kernel bake-off corpus against one backend |
 //! | `pxp-cli journal record FILE.pxj -- COMMAND …` / `journal replay FILE.pxj` | Records a session of commands with the geometry hashes they produce; replays it in a fresh directory and fails on any difference |
 //! | `pxp-cli mcp [--journal FILE.pxj]` | Model Context Protocol server on stdio running the same commands headless |
-//! | `pxp-cli stepstress [--repeat N] [--format summary\|markdown\|tsv\|details] FILE\|DIR...` | Imports STEP files (the NIST MBE PMI test models) with the native backend and stress-tests them: file-stated validation properties, round trips, boolean identities |
+//! | `pxp-cli stepstress [--repeat N] [--format summary\|markdown\|tsv\|details] FILE\|DIR...` | Imports STEP files (the NIST MBE PMI test models) with one backend (`--kernel native\|occt`) and stress-tests them: file-stated validation properties, round trips, boolean identities |
 //! | `pxp-cli apps` | Lists the six applications and when their commands arrive |
 //! | `pxp-cli commands [APP]` | Lists commands (all, or one application's) with status, ribbon placement and shortcut |
 //! | `pxp-cli find QUERY` | Command Finder: search commands by label, ID or description |
 //! | `pxp-cli shortcut KEYS` | Which command a default shortcut runs (`Ctrl+M`) |
 //! | `pxp-cli eval FORMULA [--let NAME=FORMULA]... [--units mm\|in] [--decimals N]` | Evaluates an NX-style expression through the document core (transactions, dependency tracking and recompute) |
 //! | `pxp-cli status` | Which crates are implemented and which are planned, read from the crates themselves |
+//! | `pxp-cli crashes [--clear]` | Lists the local crash reports (newest first) or deletes them; nothing is ever sent anywhere |
 //! | `pxp-cli version` | Version and platform |
 //!
-//! Planned for sub-stage 0I: `pxp-cli mcp` (MCP server over stdio) and
-//! session journaling with record, replay and geometry-hash comparison. They
-//! are not offered until they work.
+//! Every run installs the local crash reporter (`pxp_diag::crash`): a
+//! panic writes a report to the per-user crash directory
+//! (`PXP_CRASH_DIR` overrides it).
 //!
 //! ## Kernel
 //!
 //! The CLI is a shell crate, so it is the layer that chooses the geometry
-//! backend: SolidCraft's kernel through `pxp-kernel-native`, hosted
-//! in-process by a `KernelHost`. Linking it means this binary is conveyed
-//! under LGPL-3.0 (ADR-0001).
+//! backend. Part commands use SolidCraft's kernel through
+//! `pxp-kernel-native`, hosted in-process by a `KernelHost`; linking it
+//! means this binary is conveyed under LGPL-3.0 (ADR-0001). `bakeoff` and
+//! `stepstress` also take `--kernel occt`, which starts the OCCT worker
+//! process (`pxp-kernel-occt`).
 //!
 //! ## Responsibility and limits
 //!
@@ -84,9 +87,10 @@ impl std::fmt::Display for CliError {
     }
 }
 
-const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|stepstress [...] FILE|DIR...|journal record|replay ...|mcp [--journal FILE]|status|version>";
+const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|stepstress [...] FILE|DIR...|journal record|replay ...|mcp [--journal FILE]|crashes [--clear]|status|version>";
 
 fn main() -> ExitCode {
+    pxp_diag::crash::install(pxp_diag::crash::default_dir(), "pxp-cli");
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
         Ok(out) => {
@@ -181,6 +185,7 @@ fn run(args: &[String]) -> Result<String, CliError> {
         "stepstress" => stepstress::run(rest, &*kernel_for(rest)?),
         "journal" => journal::run(rest, run, part::feature_hashes, &kernel_label()),
         "mcp" => mcp::run(rest, run, part::feature_hashes, &kernel_label()),
+        "crashes" => crashes(rest, &pxp_diag::crash::default_dir()),
         "status" => Ok(status()),
         "version" | "--version" | "-V" => Ok(version()),
         "help" | "--help" | "-h" => Ok(format!("{USAGE}\n")),
@@ -343,6 +348,25 @@ fn eval(args: &[String]) -> Result<String, CliError> {
 }
 
 /// Crate status, read from each placeholder crate's `PLANNED_STAGE`.
+/// `crashes [--clear]`: lists the local crash reports, newest first, or
+/// deletes them.
+fn crashes(args: &[String], dir: &std::path::Path) -> Result<String, CliError> {
+    match args {
+        [] => {
+            let reports = pxp_diag::crash::pending(dir);
+            let mut out = format!("{} crash report(s) in {}\n", reports.len(), dir.display());
+            for r in reports {
+                let _ = writeln!(out, "  {}", r.display());
+            }
+            Ok(out)
+        }
+        [flag] if flag == "--clear" => pxp_diag::crash::clear(dir)
+            .map(|n| format!("deleted {n} crash report(s)\n"))
+            .map_err(|e| CliError::Command(format!("could not delete crash reports: {e}"))),
+        _ => Err(CliError::Usage("usage: pxp-cli crashes [--clear]".into())),
+    }
+}
+
 fn status() -> String {
     let implemented = [
         (
@@ -353,7 +377,10 @@ fn status() -> String {
             "pxp-math",
             "vectors, transforms, Csys, tolerances, stable hash",
         ),
-        ("pxp-diag", "error reports, panic capture"),
+        (
+            "pxp-diag",
+            "error reports, panic capture, local crash reports",
+        ),
         ("pxp-compute", "cancellation, ordered parallel map (CPU)"),
         (
             "pxp-doc",
@@ -365,7 +392,7 @@ fn status() -> String {
         ),
         (
             "pxp-format",
-            ".pxp (SQLite): save, open, recovery journal, backups, migrations",
+            ".pxp (SQLite): save, open, recovery journal, autosave, backups, migrations",
         ),
         (
             "pxp-kernel",
@@ -373,7 +400,19 @@ fn status() -> String {
         ),
         (
             "pxp-kernel-native",
-            "SolidCraft kernel backend: primitives, booleans, history, hash",
+            "SolidCraft kernel backend: primitives, booleans, history, hash, STEP, meshes",
+        ),
+        (
+            "pxp-kernel-occt",
+            "OCCT 7.8.1 backend in a worker process (bake-off; Python OCP worker for now)",
+        ),
+        (
+            "pxp-render",
+            "wgpu viewport: edges, silhouettes, section, GPU picking, NX views (pxp-app)",
+        ),
+        (
+            "pxp-ui",
+            "egui shell: ribbon, navigators, Block dialog, Command Finder (pxp-app)",
         ),
         ("pxp-appkit", "Application trait, commands, registry"),
         (
@@ -386,15 +425,12 @@ fn status() -> String {
         ),
         (
             "pxp-cli",
-            "this tool (MCP server and journaling planned, 0I)",
+            "this tool, with the MCP server and session journaling",
         ),
     ];
-    let planned: [(&str, u8); 22] = [
-        ("pxp-kernel-occt", pxp_kernel_occt::PLANNED_STAGE),
+    let planned: [(&str, u8); 18] = [
         ("pxp-sketch", pxp_sketch::PLANNED_STAGE),
         ("pxp-tess", pxp_tess::PLANNED_STAGE),
-        ("pxp-render", pxp_render::PLANNED_STAGE),
-        ("pxp-ui", pxp_ui::PLANNED_STAGE),
         ("pxp-io", pxp_io::PLANNED_STAGE),
         ("pxp-io-step", pxp_io_step::PLANNED_STAGE),
         ("pxp-io-iges", pxp_io_iges::PLANNED_STAGE),
@@ -411,9 +447,8 @@ fn status() -> String {
         ("pxp-topopt", pxp_topopt::PLANNED_STAGE),
         ("pxp-scan", pxp_scan::PLANNED_STAGE),
         ("pxp-pointcloud", pxp_pointcloud::PLANNED_STAGE),
-        ("pxp-app (GUI)", 0),
     ];
-    let mut out = String::from("Implemented (Stage 0, sessions 1-2):\n");
+    let mut out = String::from("Implemented (Stage 0):\n");
     for (name, what) in implemented {
         let _ = writeln!(out, "  {name:<20} {what}");
     }
@@ -439,6 +474,24 @@ mod tests {
 
     fn run_str(args: &[&str]) -> Result<String, CliError> {
         run(&args.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn crash_reports_are_listed_and_cleared() {
+        let dir = std::env::temp_dir().join(format!("pxp-cli-crashes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let none = crashes(&[], &dir).unwrap();
+        assert!(none.starts_with("0 crash report(s)"), "{none}");
+        pxp_diag::crash::write_report(&dir, "test").unwrap();
+        assert!(crashes(&[], &dir).unwrap().starts_with("1 crash report(s)"));
+        assert_eq!(
+            crashes(&["--clear".into()], &dir).unwrap(),
+            "deleted 1 crash report(s)\n"
+        );
+        assert!(matches!(
+            crashes(&["x".into()], &dir),
+            Err(CliError::Usage(_))
+        ));
     }
 
     #[test]

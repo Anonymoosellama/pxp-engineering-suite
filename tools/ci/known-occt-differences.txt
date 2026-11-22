@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# OCCT bake-off hash differences between operating systems that are
+# understood and accepted: `<case id> <target>` per line. Empty: none yet
+# (the first cross-OS OCCT run has not happened; see STATUS.md).
