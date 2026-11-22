@@ -181,8 +181,15 @@ fn sil_fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // A smooth surface changes depth gradually: compare the jump with the
     // local slope (second difference) so tilted faces do not outline.
     let curve = max(abs(l + r - 2.0 * c), abs(u + d - 2.0 * c));
-    if (c > 0.0 && near_side && jump > 0.004 && curve > 0.004) {
-        return frame.edge_color;
+    let outline = c > 0.0 && near_side && jump > 0.004 && curve > 0.004;
+    // Discard inside the branch and end the function with a return. Naga
+    // copies a trailing `discard;` into HLSL as the last statement, and the
+    // Direct3D compiler (FXC) then refuses the shader with X3507 "not all
+    // control paths return a value", which broke every viewport on Windows.
+    // Every fragment shader in this file keeps that shape: discard in an
+    // `if`, return last.
+    if (!outline) {
+        discard;
     }
-    discard;
+    return frame.edge_color;
 }
