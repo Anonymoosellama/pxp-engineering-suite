@@ -11,7 +11,7 @@ yet opened).
 
 | Stage | Scope | State |
 | --- | --- | --- |
-| 0 | Foundations | **Complete, at the gate** (sessions 1-3). Verification packet: `docs/verification/stage-0.md`. CI on branch `stage-0-complete`: green on the five build targets except one macOS packaging step, fixed in the latest commit (see session 3, part 3). Waiting for "Stage 0 approved" |
+| 0 | Foundations | **Complete, at the gate** (sessions 1-3). Verification packet: `docs/verification/stage-0.md`. CI on branch `stage-0-complete`: **all 20 jobs green** at `bf0787f` (run 45067857126) on the five build targets (see session 3, part 3). Waiting for "Stage 0 approved" |
 | 1 | Modeling (CAD, assemblies) | Not started; gated on "Stage 0 approved" |
 | 2 | Drafting | Not started |
 | 3 | Manufacturing core | Not started |
@@ -31,7 +31,7 @@ yet opened).
 | 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | **Done**: headless (session 2) and in the shell with dialogs, Specify Point and the WCS display (session 3) |
 | 0H | ADR-0002 UI prototypes, NX-style shell, wgpu viewer | **Done, session 3**: egui + egui_dock chosen over iced (Slint excluded by licence); `pxp` shell and `pxp-render` viewer |
 | 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | **Done, session 3** |
-| 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | **Done, session 3** (packaging and long fuzzing as CI jobs, not yet run) |
+| 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | **Done, session 3**: packaging green in CI since 2026-11-22; long fuzzing nightly, which runs from `main` only |
 
 ## Session 3, part 3 (2026-11-22) — first CI on the pushed branch
 
@@ -45,6 +45,7 @@ on that branch:
 | 45059312172 | `9cd0f3b` | windows-2025 green. windows-11-arm: the GPU test process crashed (0xc0000005, access violation); re-run (attempt 2) crashed the same way | `7bdcbf5`, `d3da4f7`: step markers and wgpu's log in the GPU tests, a diagnostic step after a failed test step |
 | 45063743207 | `d8fee62` | **User decision: Windows ARM64 out of the build for now.** The `windows-arm-gpu-diagnostics` job (not part of the build) showed the six GPU tests pass one at a time with validation on and off, and crash only in parallel, with four Direct3D 12 devices rendering at once on WARP | `07e2c37`: the GPU tests take turns on the device (one device alive at a time, as in the product) |
 | 45064274547 | `07e2c37` | 19 / 20 jobs green: `clippy + test + doc` on all five build targets, `determinism` (cross-OS geometry hashes), the OCCT jobs and their cross-OS hashes, benchmarks, packaging on Linux, Windows and macOS x86_64, and the Windows ARM64 diagnostics job in all three modes, parallel included. One failure: `package (macos-15)`, hdiutil "No space left on device" on the image's own volume (same step green on the two runs before) | The macOS package step gives hdiutil an explicit `-size` (bundle plus 20 % and 20 MB) |
+| 45067857126 | `bf0787f` | **20 / 20 jobs green**, including `package (macos-15)` (119 MB bundle, 164 MB image) and the Windows ARM64 diagnostics job | None |
 
 **Windows ARM64.** Out of the `test` matrix and the nightly NIST matrix
 (it was never in `package` or `occt`); see "Decisions taken" and

@@ -2,10 +2,11 @@
 # Stage 0 verification packet
 
 - **Date:** 2026-11-22
-- **Commits:** the hand-over bundle (see "Builds"). Push from the agent's
-  sandbox was refused, so **CI has not run on any session-3 commit**.
-  Everything below was checked on one Linux x86-64 machine (2 vCPU, no
-  GPU), unless a row says otherwise.
+- **Commits:** branch `stage-0-complete` on GitHub (pushed 2026-11-22).
+  **CI: all 20 jobs green at `bf0787f`** (run 45067857126) on the five
+  build targets: Linux x86_64/aarch64, Windows x64, macOS arm64/x86_64.
+  Local checks ran on one Linux x86-64 machine (2 vCPU, no GPU), unless a
+  row says otherwise.
 - **Gate:** Stage 1 does not start until you reply "Stage 0 approved".
 
 ## 1. What was built
@@ -25,15 +26,15 @@
 
 **Not built, and why**
 
-- Signed installers and download links: CI has not run (push refused), and
-  signing needs your certificates (decision D3). MSI/MSIX, AppImage and
-  Flatpak are planned for Stage 1. Stage 0 has unsigned .zip, .dmg,
-  .tar.gz and .deb jobs.
+- Signed installers: signing needs your certificates (decision D3). CI
+  builds unsigned .zip, .dmg, .tar.gz and .deb packages on every run.
+  MSI/MSIX, AppImage and Flatpak are planned for Stage 1.
 - Line coverage: not measured. `cargo-llvm-cov` needs the `llvm-tools`
   component, which the sandbox cannot download. Section 6 gives test
   counts instead, and a coverage CI job is proposed for Stage 1.
-- Cross-OS determinism of the session-3 work: the CI and nightly jobs
-  exist but have not run.
+- Nightly runs (long fuzzing, NIST STEP on every OS, the full bake-off on
+  both kernels): GitHub runs scheduled workflows only from the default
+  branch, so they start once `stage-0-complete` is merged into `main`.
 
 ## 2. Builds
 
@@ -56,7 +57,7 @@ you or CI**.
 
 | # | Item | Status | How to check |
 | --- | --- | --- | --- |
-| 1 | Installs and launches from the CI packages on Windows, macOS and Linux | ☐ | Push, download each `pxp-<os>` artefact, run `pxp --version`, then `pxp`. Here, the Linux build launched under Xvfb with Mesa's software rasteriser. |
+| 1 | Installs and launches from the CI packages on Windows, macOS and Linux | ☐ | Download each `pxp-<os>` artefact from a green run (for example run 45067857126, Summary page), run `pxp --version`, then `pxp`. CI's package jobs already run `pxp --version` on the release binaries they package. Here, the Linux build launched under Xvfb with Mesa's software rasteriser. |
 | 2 | New part from mm and inch templates; block through its dialog; save, close, reopen; geometry hash identical | ◐ | Ctrl+N, choose Millimetres, OK. Click **Block**, then click the top of the datum (Specify Point) or type an origin, type the lengths, press OK. Ctrl+S, File › Close, Ctrl+O, reopen. Then run `pxp-cli part verify FILE`: it recomputes every solid and compares hashes. Here: a part made in the shell (`pxp --new … --block … --save`) was verified identical by `pxp-cli part verify`. Inch and mm samples are in `samples/`. The dialog's OK path is the same session call (`add_primitive`) that the scripted run uses, but nobody clicked it with a mouse here. |
 | 3 | Kill the process mid-session; on relaunch, recovery is offered and restores the last committed action | ✔ | Make a change, kill `pxp` (Task Manager, `kill -9`), relaunch on the part: the **Unsaved work found** prompt offers Restore. Here: shown by screenshot after an unclean exit (4 unsaved changes offered), and by `session::tests` (restore after a simulated crash, including 100 steps). |
 | 4 | 100 undo and redo steps behave correctly | ✔ | Add blocks, press Ctrl+Z repeatedly, then Ctrl+Y. Here: `a_hundred_undo_and_redo_steps_restore_every_state` (100 features undone to the template, redone in order, and recovered from the journal); benchmark `doc/undo-redo-100-steps` 0.75 ms. |
@@ -81,9 +82,9 @@ pass `pxp-cli part verify`.
 
 | Severity | Item |
 | --- | --- |
+| High | The OCCT backend uses a Python worker (OCP). It must not ship; a native worker is ADR-0004's condition 1. |
 | Medium | Windows ARM64 is not built, tested or packaged (user decision 2026-11-22). Its GPU-test crash (several Direct3D 12 devices at once on WARP) is fixed by running the GPU tests one device at a time; returning it to the build is decision D7. |
 | Medium | The nightly jobs (long fuzzing, full bake-off, NIST on every OS) run only from `main`; they start once `stage-0-complete` is merged. |
-| High | The OCCT backend uses a Python worker (OCP). It must not ship; a native worker is ADR-0004's condition 1. |
 | Medium | OCCT drifts up to 4.6e-5 relative on imported freeform solids, beyond the 1e-6 STEP round-trip target (decision D1). |
 | Medium | The shell defaults to the SolidCraft kernel (`--kernel occt` selects OCCT); switching the default is Stage 1's first task. |
 | Medium | Point snapping uses display polylines: edge ends are exact, curved-edge midpoints are within the display chord. Control Point, Intersection, Arc Center and Quadrant are greyed (Stage 1). Edge picking, rectangle selection and preselection highlight are Stage 1. |
