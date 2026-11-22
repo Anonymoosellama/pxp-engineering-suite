@@ -31,6 +31,48 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | CLI part commands exist (session 2); MCP and journaling in session 3 |
 | 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | Later |
 
+## Session 3, part 2 (2026-11-21) — finish Stage 0
+
+The user asked to continue until Stage 0 is complete. Push access was
+refused twice, so every slice below is a local commit handed over as a git
+bundle; nothing counts as CI-green until the user pushes it. Environment:
+apt works (Mesa's lavapipe gives wgpu a software Vulkan device, so the UI
+and viewer can be rendered and checked offscreen), pip works (OCCT 7.8.1 as
+`cadquery-ocp` wheels), crates.io works; 2 vCPU, 7 GB, no display, no GPU,
+no nightly toolchain.
+
+**Tasks, in order**
+
+1. **0F corpus to at least 200 parts:** generated synthetic families with
+   analytic answers (arrays, grids, near-tangent and near-coincident
+   sweeps), on top of the 67 primitive cases and 39 NIST files.
+2. **0F OCCT half:** `pxp-kernel-occt` as a worker-process client of a
+   versioned request/response protocol (restart after a crash, timeouts);
+   the bake-off worker runs OCCT 7.8.1 through its Python bindings (OCP).
+   Same corpora as SolidCraft; ADR-0004 recommendation from the evidence.
+3. **0I:** MCP server (`pxp-cli mcp`, JSON-RPC over stdio) running the same
+   commands headless; session journaling with record, replay and
+   geometry-hash comparison; journals as regression tests.
+4. **0J:** local crash reporter (no telemetry), autosave, criterion
+   benchmarks with the Stage 0 budgets, a persistent map for `DocState`.
+5. **0H:** ADR-0002 prototypes (egui + egui_dock versus Slint: ribbon and
+   navigator), decision; the NX-style shell (`pxp-ui`, `pxp-app`) and the
+   wgpu viewer (`pxp-render`: NX mouse grammar, GPU picking, edges and
+   silhouettes, section plane, view triad, standard and named views,
+   software fallback); Block dialog; WCS. Checked by offscreen screenshots.
+6. **CI and hand-over:** packaging jobs, nightly long fuzzing, the
+   verification packet.
+
+**Risks**
+
+- Without push nothing is CI-confirmed: packaging, the six-target test
+  matrix and cross-OS hashes stay unverified until the user pushes.
+- No GPU here: the 5-million-triangle frame-rate check can only be run on
+  the user's machine (a benchmark command is provided for it).
+- No nightly toolchain here: fuzzing CPU-hours come from the nightly CI job.
+- The OCP worker is a measurement backend: shipping OCCT would need a C++
+  worker speaking the same protocol (recorded in ADR-0004).
+
 ## Session 3, part 1 (2026-11-21) — Stage 0, 0F: NIST STEP stress test
 
 The user asked for the NIST test model stress test and enabled `nist.gov`.
