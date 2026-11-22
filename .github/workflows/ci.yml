@@ -327,7 +327,16 @@ jobs:
           <key>CFBundlePackageType</key><string>APPL</string>
           </dict></plist>
           PLIST
-          hdiutil create -volname PXP -srcfolder "$app" -ov -format UDZO pxp-macos-$(uname -m).dmg
+          # hdiutil sizes its temporary image from -srcfolder and sometimes
+          # sizes it too small: run 45064274547 failed with "No space left
+          # on device" on the image's own volume (/Volumes/PXP), while the
+          # same step passed on the two runs before. An explicit -size
+          # avoids the estimate: the bundle's size plus 20 % and 20 MB for
+          # the file system's own overhead. UDZO compresses the result, so
+          # the .dmg is no larger for the headroom.
+          size_mb=$(( $(du -sm "$app" | cut -f1) * 12 / 10 + 20 ))
+          echo "app bundle $(du -sh "$app" | cut -f1); image size ${size_mb} MB"
+          hdiutil create -volname PXP -srcfolder "$app" -size "${size_mb}m" -ov -format UDZO pxp-macos-$(uname -m).dmg
       - name: Smoke test the packaged binaries
         shell: bash
         run: |
