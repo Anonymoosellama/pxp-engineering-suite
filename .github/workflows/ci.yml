@@ -88,7 +88,20 @@ jobs:
       - name: Clippy (pedantic, warnings are errors)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
+        id: tests
         run: cargo test --workspace --locked
+      # Runs only when the step above failed. When the headless GPU tests
+      # crash the process (windows-11-arm, run 45059312172: exit 0xc0000005
+      # inside `tests/gpu.rs`), libtest's captured output dies with it and
+      # the log cannot say which test crashed. One test at a time, with
+      # output shown, prints each test's name before it runs, so the last
+      # name in the log is the one that crashed. If this step passes, the
+      # crash needs tests running in parallel on one adapter.
+      - name: GPU tests one at a time (diagnostics after a failure)
+        if: failure() && steps.tests.outcome == 'failure'
+        run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
+        env:
+          RUST_BACKTRACE: "1"
       - name: Rustdoc (warnings are errors)
         run: cargo doc --workspace --no-deps --locked
         env:
