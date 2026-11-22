@@ -69,6 +69,8 @@ from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fus
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepCheck import BRepCheck_Analyzer, BRepCheck_NoError
 from OCP.BRepGProp import BRepGProp
+from OCP.BRepLib import BRepLib_ToolTriangulatedShape
+from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
     BRepPrimAPI_MakeCone,
@@ -100,6 +102,7 @@ from OCP.TopTools import (
     TopTools_IndexedDataMapOfShapeListOfShape,
     TopTools_IndexedMapOfShape,
 )
+from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS, TopoDS_Compound, TopoDS_Shape
 from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 
@@ -420,13 +423,22 @@ def op_body_kind(a):
     return {"kind": "wire"}
 
 
+# Relative accuracy asked of OCCT's adaptive Gauss integration. The
+# default (fixed-order) overloads of BRepGProp are not accurate enough for
+# the bake-off's 1e-6 identity checks: on SolidCraft case 1107 (a tube
+# joined with nine bars) the fixed-order volume is 2.8e-6 off the closed
+# form, the adaptive one 1.8e-10 (measured 2026-11-21; see
+# docs/reports/kernel-bakeoff-2026-11-21-comparison.md).
+MASS_EPS = 1e-9
+
+
 def mass(shape):
     vp, sp = GProp_GProps(), GProp_GProps()
-    BRepGProp.SurfaceProperties_s(shape, sp)
+    BRepGProp.SurfaceProperties_s(shape, sp, MASS_EPS)
     volume = 0.0
     c = sp.CentreOfMass()
     if TopExp_Explorer(shape, TopAbs_SOLID).More():
-        BRepGProp.VolumeProperties_s(shape, vp)
+        BRepGProp.VolumeProperties_s(shape, vp, MASS_EPS)
         volume = vp.Mass()
         c = vp.CentreOfMass()
     return volume, sp.Mass(), [c.X(), c.Y(), c.Z()]
@@ -645,6 +657,73 @@ def op_release(a):
     return {}
 
 
+def op_tessellate(a):
+    """Display mesh: BRepMesh_IncrementalMesh at the asked chord (linear
+    deflection, absolute) and angle, then each face's triangulation read in
+    the indexed-map order of faces (the order ``topology`` reports), and
+    each edge's polygon on its first face's triangulation. Seam edges (an
+    edge used twice by one face) are left out of the edge list."""
+    e = get(a.get("shape"))
+    s = e.shape
+    chord = float(a.get("chord", 0.01))
+    angle = float(a.get("angle", 0.5))
+    BRepMesh_IncrementalMesh(s, chord, False, angle, True)
+    positions, normals, triangles, tri_face, edges = [], [], [], [], []
+    faces = e.maps["f"]
+    for fi in range(1, faces.Extent() + 1):
+        face = TopoDS.Face_s(faces.FindKey(fi))
+        loc = TopLoc_Location()
+        tri = BRep_Tool.Triangulation_s(face, loc)
+        if tri is None:
+            continue
+        trsf = loc.Transformation()
+        base = len(positions) // 3
+        reversed_ = face.Orientation() == TopAbs_REVERSED
+        if not tri.HasNormals():
+            BRepLib_ToolTriangulatedShape.ComputeNormals_s(face, tri)
+        for i in range(1, tri.NbNodes() + 1):
+            p = tri.Node(i).Transformed(trsf)
+            positions += [p.X(), p.Y(), p.Z()]
+            n = tri.Normal(i).Transformed(trsf)
+            if reversed_:
+                n.Reverse()
+            normals += [n.X(), n.Y(), n.Z()]
+        for t in range(1, tri.NbTriangles() + 1):
+            i1, i2, i3 = tri.Triangle(t).Get()
+            if reversed_:
+                i2, i3 = i3, i2
+            triangles += [base + i1 - 1, base + i2 - 1, base + i3 - 1]
+            tri_face.append(fi - 1)
+    ef = ancestors(s, TopAbs_EDGE, TopAbs_FACE)
+    em = e.maps["e"]
+    for ei in range(1, em.Extent() + 1):
+        edge = TopoDS.Edge_s(em.FindKey(ei))
+        if BRep_Tool.Degenerated_s(edge):
+            continue
+        around = ef.FindFromKey(edge)
+        if around.Size() == 0:
+            continue
+        face = TopoDS.Face_s(around.First())
+        if BRep_Tool.IsClosed_s(edge, face):
+            continue  # a seam: one face meets itself
+        loc = TopLoc_Location()
+        tri = BRep_Tool.Triangulation_s(face, loc)
+        if tri is None:
+            continue
+        poly = BRep_Tool.PolygonOnTriangulation_s(edge, tri, loc)
+        if poly is None:
+            continue
+        trsf = loc.Transformation()
+        line = []
+        # Poly_PolygonOnTriangulation::Node(i), 1-based: the triangulation
+        # node index of the polygon's i-th point.
+        for k in range(1, poly.NbNodes() + 1):
+            p = tri.Node(poly.Node(k)).Transformed(trsf)
+            line += [p.X(), p.Y(), p.Z()]
+        edges.append(line)
+    return {"positions": positions, "normals": normals, "triangles": triangles, "tri_face": tri_face, "edges": edges}
+
+
 OPS = {
     "block": op_block,
     "cylinder": op_cylinder,
@@ -662,6 +741,7 @@ OPS = {
     "import_step": op_import_step,
     "export_step": op_export_step,
     "check_validity": op_check,
+    "tessellate": op_tessellate,
     "release": op_release,
     "test_abort": op_test_abort,
 }

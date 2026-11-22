@@ -71,9 +71,9 @@ mod hash;
 mod history;
 
 use pxp_kernel::{
-    BackendId, BlockSpec, BodyKind, BooleanOp, Capabilities, ConeSpec, CylinderSpec,
-    GeometryKernel, ImportedShape, KernelError, MassProperties, MergedCounts, OpResult,
-    ShapeHandle, SphereSpec, StepImport, TopoHistory, TopoId, TopoKind,
+    BackendId, BlockSpec, BodyKind, BooleanOp, Capabilities, ConeSpec, CylinderSpec, FacetMesh,
+    GeometryKernel, ImportedShape, KernelError, MassProperties, MergedCounts, MeshTolerance,
+    OpResult, ShapeHandle, SphereSpec, StepImport, TopoHistory, TopoId, TopoKind,
 };
 use pxp_math::{Aabb, Csys, Point3, UnitVec3};
 use pxp_units::{Area, Length, Volume};
@@ -98,7 +98,7 @@ pub const BACKEND: BackendId = BackendId("solidcraft");
 pub const KERNEL_REVISION: &str = "2091b8828c328d5ab0a0f162dbc7a36a558aa99d";
 
 /// Operation names reported in [`Capabilities`].
-const OPS: [&str; 16] = [
+const OPS: [&str; 17] = [
     "block",
     "cylinder",
     "cone",
@@ -114,6 +114,7 @@ const OPS: [&str; 16] = [
     "bounding_box",
     "import_step",
     "export_step",
+    "tessellate",
     "check_validity",
 ];
 
@@ -597,6 +598,46 @@ impl GeometryKernel for NativeKernel {
             ..solidcraft_kernel::StepHeader::default()
         };
         solidcraft_kernel::step_export_bodies(&export, &header).map_err(kernel_err("export_step"))
+    }
+
+    /// SolidCraft's mesher (`Body::mesh`): triangles carry their face
+    /// index in record order, which is `topology()`'s face order, and
+    /// neighbouring faces share boundary nodes, so the mesh is watertight
+    /// wherever the B-rep is. Seam polylines are left out of the edges.
+    fn tessellate(
+        &self,
+        shape: ShapeHandle,
+        tolerance: &MeshTolerance,
+    ) -> Result<FacetMesh, KernelError> {
+        let body = self.get(shape)?;
+        let mesh = body
+            .mesh(&solidcraft_kernel::MeshTolerance {
+                chord: tolerance.chord.mm(),
+                angle: tolerance.angle,
+            })
+            .map_err(kernel_err("tessellate"))?;
+        #[allow(clippy::cast_possible_truncation)] // display normals: f32 is plenty
+        let normals = mesh
+            .normals
+            .iter()
+            .map(|n| [n.x as f32, n.y as f32, n.z as f32])
+            .collect();
+        let edges = mesh
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !mesh.seams.get(*i).copied().unwrap_or(false))
+            .map(|(_, line)| line.iter().map(|p| [p.x, p.y, p.z]).collect())
+            .collect();
+        let out = FacetMesh {
+            positions: mesh.positions.iter().map(|p| [p.x, p.y, p.z]).collect(),
+            normals,
+            triangles: mesh.triangles.clone(),
+            tri_face: mesh.tri_face.clone(),
+            edges,
+        };
+        out.validate()?;
+        Ok(out)
     }
 
     fn release(&self, shape: ShapeHandle) {

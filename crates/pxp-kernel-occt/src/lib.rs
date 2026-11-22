@@ -53,10 +53,10 @@
 #![forbid(unsafe_code)]
 
 use pxp_kernel::{
-    BackendId, BlockSpec, BodyKind, BooleanOp, Capabilities, ConeSpec, CylinderSpec,
+    BackendId, BlockSpec, BodyKind, BooleanOp, Capabilities, ConeSpec, CylinderSpec, FacetMesh,
     GeometryKernel, HistoryRecord, HistorySource, ImportedShape, KernelError, MassProperties,
-    MergedCounts, OpResult, Relation, ShapeHandle, SphereSpec, StepImport, TopoHistory, TopoId,
-    TopoKind,
+    MergedCounts, MeshTolerance, OpResult, Relation, ShapeHandle, SphereSpec, StepImport,
+    TopoHistory, TopoId, TopoKind,
 };
 use pxp_math::{Aabb, Point3};
 use pxp_units::{Area, Length, Volume};
@@ -226,6 +226,71 @@ fn point(reply: &Value, key: &str, op: &'static str) -> Result<Point3, KernelErr
         [px, py, pz] => Ok(Point3::new(*px, *py, *pz)),
         _ => Err(failure(op, format!("'{key}' is not a 3D point"))),
     }
+}
+
+/// A flat JSON number array, checked to hold whole groups of `n`.
+fn flat(v: &Value, key: &str, n: usize, op: &'static str) -> Result<Vec<f64>, KernelError> {
+    let out: Vec<f64> = v
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| failure(op, format!("worker reply lacks array '{key}'")))?
+        .iter()
+        .map(|x| {
+            x.as_f64()
+                .ok_or_else(|| failure(op, format!("'{key}' holds a non-number")))
+        })
+        .collect::<Result<_, _>>()?;
+    if out.len().is_multiple_of(n) {
+        Ok(out)
+    } else {
+        Err(failure(
+            op,
+            format!("'{key}' length {} is not a multiple of {n}", out.len()),
+        ))
+    }
+}
+
+/// Converts the worker's flat arrays into a [`FacetMesh`].
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn facet_mesh(v: &Value) -> Result<FacetMesh, KernelError> {
+    const OP: &str = "tessellate";
+    let triple = |c: &[f64]| match c {
+        [a, b, c] => [*a, *b, *c],
+        _ => [0.0; 3],
+    };
+    let index = |x: f64| x as u32;
+    let positions = flat(v, "positions", 3, OP)?.chunks(3).map(triple).collect();
+    let normals = flat(v, "normals", 3, OP)?
+        .chunks(3)
+        .map(|c| triple(c).map(|x| x as f32))
+        .collect();
+    let triangles = flat(v, "triangles", 3, OP)?
+        .chunks(3)
+        .map(|c| triple(c).map(index))
+        .collect();
+    let tri_face = flat(v, "tri_face", 1, OP)?.into_iter().map(index).collect();
+    let edges = v
+        .get("edges")
+        .and_then(Value::as_array)
+        .ok_or_else(|| failure(OP, "worker reply lacks 'edges'"))?
+        .iter()
+        .map(|line| {
+            let coords: Vec<f64> = line
+                .as_array()
+                .map(|a| a.iter().filter_map(Value::as_f64).collect())
+                .unwrap_or_default();
+            coords.chunks(3).map(triple).collect()
+        })
+        .collect();
+    let mesh = FacetMesh {
+        positions,
+        normals,
+        triangles,
+        tri_face,
+        edges,
+    };
+    mesh.validate()?;
+    Ok(mesh)
 }
 
 fn kind_of(code: &str) -> Option<TopoKind> {
@@ -702,6 +767,21 @@ impl GeometryKernel for OcctKernel {
             point(&v, "min", "bounding_box")?,
             point(&v, "max", "bounding_box")?,
         ]))
+    }
+
+    /// `BRepMesh_IncrementalMesh` at the chord and angle asked, read back
+    /// face by face (faces in `TopExp` map order, which is `topology()`'s).
+    fn tessellate(
+        &self,
+        shape: ShapeHandle,
+        tolerance: &MeshTolerance,
+    ) -> Result<FacetMesh, KernelError> {
+        let v = self.shape_op(
+            "tessellate",
+            shape,
+            json!({ "chord": tolerance.chord.mm(), "angle": tolerance.angle.unwrap_or(0.5) }),
+        )?;
+        facet_mesh(&v)
     }
 
     fn check_validity(&self, shape: ShapeHandle) -> Result<Vec<String>, KernelError> {

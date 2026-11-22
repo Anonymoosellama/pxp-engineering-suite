@@ -558,3 +558,54 @@ fn bounding_box_is_exact_on_curved_faces() {
         assert!((got - want).abs() < 1e-6, "{got} vs {want}");
     }
 }
+
+/// Signed volume enclosed by a closed triangle mesh (divergence theorem):
+/// exact for planar faces, so a block's mesh must enclose its volume.
+fn mesh_volume(m: &pxp_kernel::FacetMesh) -> f64 {
+    m.triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| m.positions[i as usize]);
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                / 6.0
+        })
+        .sum()
+}
+
+#[test]
+fn display_meshes_are_watertight_and_tag_every_face() {
+    let h = host();
+    let block = h
+        .op(|k| k.block(&block_spec(20.0, 30.0, 10.0)))
+        .unwrap()
+        .shape;
+    let tol = pxp_kernel::MeshTolerance::display(mm(40.0));
+    let m = h.call(|k| k.tessellate(block, &tol)).unwrap();
+    m.validate().unwrap();
+    close(mesh_volume(&m), 6000.0, 1e-12);
+    let faces: std::collections::BTreeSet<u32> = m.tri_face.iter().copied().collect();
+    assert_eq!(
+        faces,
+        (0..6).collect(),
+        "every face of the block has triangles"
+    );
+    assert_eq!(m.edges.len(), 12, "a block shows its 12 edges");
+    // A cylinder's seam is not drawn: two circles and no line along it.
+    let cyl = h
+        .op(|k| {
+            k.cylinder(&CylinderSpec {
+                base: Point3::new(0.0, 0.0, 0.0),
+                axis: UnitVec3::Z,
+                diameter: mm(10.0),
+                height: mm(20.0),
+            })
+        })
+        .unwrap()
+        .shape;
+    let m = h.call(|k| k.tessellate(cyl, &tol)).unwrap();
+    assert_eq!(m.edges.len(), 2, "two circular edges, seam hidden");
+    // The chord tolerance bounds the volume error of the faceted cylinder.
+    let exact = PI * 25.0 * 20.0;
+    assert!(mesh_volume(&m) < exact && mesh_volume(&m) > exact * 0.99);
+}

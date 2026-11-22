@@ -95,6 +95,13 @@ impl GeometryKernel for Shared {
     fn import_native(&self, b: &[u8]) -> Result<pxp_kernel::ShapeHandle, KernelError> {
         self.0.import_native(b)
     }
+    fn tessellate(
+        &self,
+        s: pxp_kernel::ShapeHandle,
+        t: &pxp_kernel::MeshTolerance,
+    ) -> Result<pxp_kernel::FacetMesh, KernelError> {
+        self.0.tessellate(s, t)
+    }
     fn release(&self, s: pxp_kernel::ShapeHandle) {
         self.0.release(s);
     }
@@ -260,4 +267,39 @@ fn a_crash_costs_one_call_and_stale_handles_are_refused() {
         k.mass_properties(before),
         Err(KernelError::UnknownShape(_))
     ));
+}
+
+/// Signed volume enclosed by a closed triangle mesh (divergence theorem).
+fn mesh_volume(m: &pxp_kernel::FacetMesh) -> f64 {
+    m.triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| m.positions[i as usize]);
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                / 6.0
+        })
+        .sum()
+}
+
+#[test]
+fn display_meshes_are_closed_oriented_and_tag_every_face() {
+    let Some(k) = kernel() else { return };
+    let h = host(&k);
+    let b = h.op(|k| k.block(&block(20.0, 30.0, 10.0))).unwrap().shape;
+    let tol = pxp_kernel::MeshTolerance::display(mm(40.0));
+    let m = h.call(|k| k.tessellate(b, &tol)).unwrap();
+    m.validate().unwrap();
+    // Outward-facing triangles enclose +6000 mm³ (a reversed face would
+    // subtract its share).
+    close(mesh_volume(&m), 6000.0, 1e-12);
+    let faces: std::collections::BTreeSet<u32> = m.tri_face.iter().copied().collect();
+    assert_eq!(faces, (0..6).collect());
+    assert_eq!(m.edges.len(), 12);
+    let c = h.op(|k| k.cylinder(&hole())).unwrap().shape;
+    let m = h.call(|k| k.tessellate(c, &tol)).unwrap();
+    assert_eq!(m.edges.len(), 2, "seam hidden");
+    let v = h.call(|k| k.mass_properties(c)).unwrap().volume.mm3();
+    let mv = mesh_volume(&m);
+    assert!(mv < v && mv > 0.99 * v, "faceted {mv} vs exact {v}");
 }

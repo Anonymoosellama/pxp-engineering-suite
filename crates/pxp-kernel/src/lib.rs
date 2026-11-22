@@ -397,6 +397,85 @@ pub struct StepImport {
     pub warnings: Vec<String>,
 }
 
+/// Display tolerances for [`GeometryKernel::tessellate`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeshTolerance {
+    /// The farthest a facet or edge segment may stand off the exact
+    /// surface or curve (chord height).
+    pub chord: Length,
+    /// The most a facet may turn across its width, in radians; `None`:
+    /// the chord height alone.
+    pub angle: Option<f64>,
+}
+
+impl MeshTolerance {
+    /// The viewport's default: a chord of 1/1000 of the body's size (at
+    /// least 1 µm) and 15° between facets, roughly what NX displays at its
+    /// standard resolution.
+    #[must_use]
+    pub fn display(body_size: Length) -> Self {
+        Self {
+            chord: Length::from_mm((body_size.mm() * 1e-3).max(1e-3)),
+            angle: Some(15f64.to_radians()),
+        }
+    }
+}
+
+/// A display mesh of a body ([`GeometryKernel::tessellate`]): never the
+/// source of truth for geometry, the exact B-rep always is.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FacetMesh {
+    /// Vertex positions (mm, model space).
+    pub positions: Vec<[f64; 3]>,
+    /// Unit normals, one per position (pointing out of the material).
+    pub normals: Vec<[f32; 3]>,
+    /// Triangles as vertex indices, counter-clockwise seen from outside.
+    pub triangles: Vec<[u32; 3]>,
+    /// For each triangle, the index of its face among the body's faces in
+    /// [`GeometryKernel::topology`] order (faces only, counted from 0).
+    pub tri_face: Vec<u32>,
+    /// Edge polylines to display. Seams (where one smooth surface meets
+    /// itself) are left out.
+    pub edges: Vec<Vec<[f64; 3]>>,
+}
+
+impl FacetMesh {
+    /// Checks the mesh's internal consistency: indices in range, one face
+    /// per triangle, one normal per position.
+    ///
+    /// # Errors
+    /// [`KernelError::GeometryFailure`] naming the first inconsistency.
+    pub fn validate(&self) -> Result<(), KernelError> {
+        let bad = |reason: String| KernelError::GeometryFailure {
+            op: "tessellate",
+            reason,
+            entities: Vec::new(),
+        };
+        let n = self.positions.len();
+        if self.normals.len() != n {
+            return Err(bad(format!(
+                "{} normals for {n} positions",
+                self.normals.len()
+            )));
+        }
+        if self.tri_face.len() != self.triangles.len() {
+            return Err(bad(format!(
+                "{} face indices for {} triangles",
+                self.tri_face.len(),
+                self.triangles.len()
+            )));
+        }
+        if let Some(t) = self
+            .triangles
+            .iter()
+            .find(|t| t.iter().any(|&i| i as usize >= n))
+        {
+            return Err(bad(format!("triangle {t:?} indexes past {n} positions")));
+        }
+        Ok(())
+    }
+}
+
 /// Mass properties at unit density. Multiply by a material density
 /// ([`pxp_units::Density`]) for mass.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -745,6 +824,26 @@ pub trait GeometryKernel: Send + Sync {
             reason: format!(
                 "backend has no STEP writer ({} shapes offered)",
                 shapes.len()
+            ),
+        })
+    }
+
+    /// A display mesh of the shape at the given tolerances (see
+    /// [`FacetMesh`]). Read-only: the shape is unchanged.
+    ///
+    /// # Errors
+    /// [`KernelError::UnknownShape`], a meshing failure, or (the default)
+    /// [`KernelError::Unsupported`].
+    fn tessellate(
+        &self,
+        shape: ShapeHandle,
+        tolerance: &MeshTolerance,
+    ) -> Result<FacetMesh, KernelError> {
+        Err(KernelError::Unsupported {
+            op: "tessellate",
+            reason: format!(
+                "backend has no mesher (shape {shape:?}, chord {:?})",
+                tolerance.chord
             ),
         })
     }
