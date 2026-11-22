@@ -27,8 +27,10 @@ of 37 real solids fail its own validity check, and 16 booleans on 6 of them
 were refused. OCCT is also faster: 3.7× at the median and 3.3× at the 95th
 percentile on the primitive corpus at full optimisation, and about 15× on
 STEP import. OCCT already has the blends, shells and offsets that Stage 1
-needs. Its LGPL-2.1 licence avoids the LGPL-3.0 conveyance that SolidCore's
-Apache-2.0-only crates force (ADR-0001).
+needs. Its LGPL-2.1 licence adds no conveyance constraint, whereas
+SolidCore's Apache-2.0-only crates force LGPL-3.0. That now matters only
+for `pxp-cli` and for embedders, because the desktop binary is LGPL-3.0
+anyway: winit is Apache-2.0 only (ADR-0001).
 
 SolidCraft is the more exact kernel wherever it accepts the input. On
 valid imported solids its boolean identities hold to 1.6e-8. It is pure
