@@ -49,6 +49,7 @@
 #![forbid(unsafe_code)]
 
 pub mod primitives;
+pub mod session;
 
 use pxp_appkit::{
     AppId, Application, ChangeCtx, ChangeSet, CommandSpec, CommandStatus, ObjectKind,

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[package]
+name = "pxp-proto-egui"
+description = "ADR-0002 prototype: NX-style ribbon and navigator in egui + egui_dock."
+version = "0.0.0"
+edition = "2024"
+license = "LGPL-2.1-or-later"
+publish = false
+
+# A workspace of its own: the prototype is evidence for ADR-0002, not part
+# of the product build.
+[workspace]
+
+[dependencies]
+pxp-appkit = { path = "../../crates/pxp-appkit" }
+pxp-app-modeling = { path = "../../crates/pxp-app-modeling" }
+pxp-app-drafting = { path = "../../crates/pxp-app-drafting" }
+pxp-app-manufacturing = { path = "../../crates/pxp-app-manufacturing" }
+pxp-app-postgen = { path = "../../crates/pxp-app-postgen" }
+pxp-app-machine-kit = { path = "../../crates/pxp-app-machine-kit" }
+pxp-app-cae = { path = "../../crates/pxp-app-cae" }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland"] }
+egui_dock = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+strip = true

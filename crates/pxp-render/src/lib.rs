@@ -1,39 +1,40 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
-//! # pxp-render: wgpu scene renderer
+//! # pxp-render: the 3D viewport
 //!
-//! wgpu viewer: shaded and wireframe display, GPU ID-buffer picking, edges, silhouettes,
-//! section clipping.
+//! wgpu rendering of B-rep display meshes with NX-style viewing:
 //!
-//! **Status: not yet implemented.** Scheduled for Stage 0 (sub-stage 0H). The crate exists now
-//! so the workspace layering, dependency checks and documentation are in place from day one. It
-//! deliberately exports no functions: a caller cannot reach a stub that silently does nothing.
+//! | Module | What it does | GPU? |
+//! | --- | --- | --- |
+//! | [`camera`] | orientation, orbit, pan, zoom about the cursor, fit, standard views (Home = trimetric, End = isometric, F8 = snap), projection matrices | no |
+//! | [`mouse`] | the NX mouse grammar (MB2 rotate, MB2+MB3 or Shift+MB2 pan, MB1+MB2 or Ctrl+MB2 zoom, wheel zoom, MB2 click = OK) | no |
+//! | [`gpu`] | offscreen viewport: shaded faces, B-rep edges, silhouettes, section plane, GPU id-buffer picking, read-back | yes |
+//! | [`snap`] | point snapping for "Specify Point" steps (End, Mid, Existing, Point on Face) | no |
+//! | [`bench`](mod@bench) | the generated 5-million-triangle orbit benchmark | yes |
 //!
-//! Blocked in session 1: wgpu needs crates.io access.
-//!
-//! ## Responsibility
-//!
-//! The graphics window: rendering styles, GPU ID-buffer picking, edges and silhouettes, order-
-//! independent transparency, section planes, view triad, named and standard views, instancing
-//! for assemblies and an annotation overlay. Falls back to the OS software rasteriser (WARP,
-//! llvmpipe) with a warning when no usable GPU exists.
-//!
-//! ## Data flow
-//!
-//! Reads immutable document snapshots and tessellations; never writes to the document. Picking
-//! results go back to the UI as object ids plus persistent topology names.
-//!
-//! ## Invariants (once implemented)
-//!
-//! - Rendering never blocks the document thread or the UI thread.
-//! - Picking returns persistent ids, never transient triangle indices.
+//! The viewport renders into its own textures; the desktop shell shows the
+//! colour texture, and tests, screenshots and the benchmark read it back.
+//! Without a hardware GPU, [`gpu::GpuContext::headless`] falls back to the
+//! OS software rasteriser and [`gpu::GpuContext::software_warning`] says so.
 //!
 //! ## Must never
 //!
-//! - Mutate the document.
-//! - Silently render nothing when the GPU is unavailable; it falls back and warns.
+//! - Treat a display mesh as geometry: picking reports a body and face,
+//!   which the shell maps back to the exact B-rep.
+//! - Block the UI thread on a long GPU job other than a single pick.
 #![forbid(unsafe_code)]
 
-/// Stage of the master prompt in which this crate's first real functionality
-/// is scheduled. Shown by `pxp-cli status` so documentation never overstates
-/// what exists.
-pub const PLANNED_STAGE: u8 = 0;
+pub mod bench;
+pub mod camera;
+pub mod gpu;
+pub mod mouse;
+pub mod snap;
+
+pub use camera::{Camera, Projection, StandardView};
+pub use gpu::{
+    COLOR_FORMAT, DisplaySettings, GpuContext, Hit, MeshInput, Picked, RenderError, Scene, Viewport,
+};
+pub use mouse::{Button, Modifiers, MouseGrammar, ViewAction};
+
+/// Re-export of the wgpu this crate is built on, so the shell shares one
+/// version.
+pub use wgpu;

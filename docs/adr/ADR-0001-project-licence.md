@@ -70,7 +70,12 @@ Registered Apache-2.0-only exceptions:
 
 | Crates | Registered | Why | Consequence |
 | --- | --- | --- | --- |
-| `solidcore`, `solidcore-convert`, `solidcore-ops`, `solidcore-record`, `solidcore-step`, `solidcore-tess` (from SolidCraft's repository, pinned commit `2091b88`) | 2026-11-21, session 2 | The B-rep kernel under SolidCraft's `solidcraft-kernel`, which `pxp-kernel-native` wraps for the Stage 0 kernel bake-off (ADR-0004). | Every binary that links `pxp-kernel-native` (today `pxp-cli`; later the desktop application) is conveyed under **LGPL-3.0**. Our source files stay `LGPL-2.1-or-later`. If OCCT wins the bake-off and the native backend is dropped from shipped binaries, this exception and the LGPL-3.0 conveyance can be removed. |
+| `solidcore`, `solidcore-convert`, `solidcore-ops`, `solidcore-record`, `solidcore-step`, `solidcore-tess` (from SolidCraft's repository, pinned commit `2091b88`) | 2026-11-21, session 2 | The B-rep kernel under SolidCraft's `solidcraft-kernel`, which `pxp-kernel-native` wraps for the Stage 0 kernel bake-off (ADR-0004). | Every binary that links `pxp-kernel-native` (today `pxp-cli` and `pxp`) is conveyed under **LGPL-3.0**. Our source files stay `LGPL-2.1-or-later`. OCCT won the bake-off (ADR-0004); once the native backend leaves shipped binaries, this exception can be removed. |
+| `winit`, `dpi`, `accesskit_winit`, `gethostname`, `codespan-reporting`, `spirv`, `gl_generator`, `khronos_api`, `glutin_wgl_sys`, `unicode-general-category`; `self_cell` (Apache-2.0 OR GPL-2.0-only, taken as Apache-2.0) | 2026-11-22, session 3 | The desktop shell's window, accessibility and GPU stack under eframe and wgpu (ADR-0002). Every winit-based Rust GUI toolkit, iced included, depends on winit. | The desktop binary `pxp` is conveyed under **LGPL-3.0** whatever kernel it links. `pxp-cli` and the library crates do not depend on these crates. |
+
+Font licences: egui bundles fonts under OFL-1.1 and the Ubuntu Font
+Licence 1.0 (`epaint_default_fonts`). Both allow bundling with software
+under any licence, so they are allowed for that crate only.
 
 ## Sources
 

@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[package]
+name = "pxp-proto-iced"
+description = "ADR-0002 prototype: NX-style ribbon and navigator in iced."
+version = "0.0.0"
+edition = "2024"
+license = "LGPL-2.1-or-later"
+publish = false
+
+[workspace]
+
+[dependencies]
+pxp-appkit = { path = "../../crates/pxp-appkit" }
+pxp-app-modeling = { path = "../../crates/pxp-app-modeling" }
+pxp-app-drafting = { path = "../../crates/pxp-app-drafting" }
+pxp-app-manufacturing = { path = "../../crates/pxp-app-manufacturing" }
+pxp-app-postgen = { path = "../../crates/pxp-app-postgen" }
+pxp-app-machine-kit = { path = "../../crates/pxp-app-machine-kit" }
+pxp-app-cae = { path = "../../crates/pxp-app-cae" }
+iced = { version = "0.14", features = ["canvas", "advanced"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+strip = true

@@ -44,6 +44,26 @@ exceptions = [
     { allow = ["Apache-2.0"], crate = "solidcore-record" },
     { allow = ["Apache-2.0"], crate = "solidcore-step" },
     { allow = ["Apache-2.0"], crate = "solidcore-tess" },
+    # The desktop shell's window and graphics stack (ADR-0002: eframe on
+    # winit and wgpu). Each is Apache-2.0 only (or, for self_cell,
+    # "Apache-2.0 OR GPL-2.0-only", taken as Apache-2.0), so the desktop
+    # binary `pxp` is conveyed under LGPL-3.0 (ADR-0001, registered
+    # 2026-11-22). Every winit-based Rust toolkit, iced included, has the
+    # same dependency.
+    { allow = ["Apache-2.0"], crate = "winit" },
+    { allow = ["Apache-2.0"], crate = "dpi" },
+    { allow = ["Apache-2.0"], crate = "accesskit_winit" },
+    { allow = ["Apache-2.0"], crate = "gethostname" },
+    { allow = ["Apache-2.0"], crate = "codespan-reporting" },
+    { allow = ["Apache-2.0"], crate = "spirv" },
+    { allow = ["Apache-2.0"], crate = "gl_generator" },
+    { allow = ["Apache-2.0"], crate = "khronos_api" },
+    { allow = ["Apache-2.0"], crate = "glutin_wgl_sys" },
+    { allow = ["Apache-2.0"], crate = "unicode-general-category" },
+    { allow = ["Apache-2.0"], crate = "self_cell" },
+    # egui's bundled fonts (Ubuntu-Light, Hack, Noto Emoji): font licences
+    # that permit bundling with software of any licence.
+    { allow = ["OFL-1.1", "Ubuntu-font-1.0"], crate = "epaint_default_fonts" },
 ]
 
 [licenses.private]
@@ -57,6 +77,25 @@ wildcards = "deny"
 # workspace crates.
 allow-wildcard-paths = true
 skip = [
+    { crate = "bitflags", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "block2", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "getrandom", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "jni-sys", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "linux-raw-sys", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "miniz_oxide", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "objc2", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "objc2-app-kit", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "objc2-foundation", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "objc2-ui-kit", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "r-efi", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "rand_core", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "redox_syscall", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "rustc-hash", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "rustix", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "syn", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "thiserror", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "thiserror-impl", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
+    { crate = "windows-sys", reason = "GUI stack (eframe, winit, wgpu, accesskit): two or three major versions in flight across that ecosystem, 2026-11; revisit at each eframe upgrade." },
     { crate = "hashbrown@0.16.1", reason = "spade (the triangulator in SolidCraft's tessellator) needs 0.16 while rusqlite's hashlink needs 0.17; both MIT OR Apache-2.0. Drop when spade moves on." },
 ]
 
