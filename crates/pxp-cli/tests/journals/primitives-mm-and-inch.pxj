@@ -1,0 +1,13 @@
+{"kernel":"solidcraft@2091b88","platform":"linux-x86_64","pxp":"0.0.1","pxp_journal":1}
+{"args":["part","new","bracket.pxp"],"ok":true,"parts":{"bracket.pxp":{"Datum Coordinate System(0)":null}}}
+{"args":["part","block","bracket.pxp","--size","40","20","10","--name","Base"],"ok":true,"parts":{"bracket.pxp":{"Base":"74a57aaa70ce352f","Datum Coordinate System(0)":null}}}
+{"args":["part","cylinder","bracket.pxp","--diameter","8","--height","30","--base","20","10","10","--name","Boss"],"ok":true,"parts":{"bracket.pxp":{"Base":"74a57aaa70ce352f","Boss":"64aea65d23019220","Datum Coordinate System(0)":null}}}
+{"args":["part","cone","bracket.pxp","--diameters","12","4","--height","15","--base","5","5","10","--axis","0","0","1","--name","Pin"],"ok":true,"parts":{"bracket.pxp":{"Base":"74a57aaa70ce352f","Boss":"64aea65d23019220","Datum Coordinate System(0)":null,"Pin":"00d56981bb6e631f"}}}
+{"args":["part","sphere","bracket.pxp","--diameter","6","--center","35","15","13","--name","Knob"],"ok":true,"parts":{"bracket.pxp":{"Base":"74a57aaa70ce352f","Boss":"64aea65d23019220","Datum Coordinate System(0)":null,"Knob":"70904dd998dcd58c","Pin":"00d56981bb6e631f"}}}
+{"args":["part","block","bracket.pxp","--size","0","1","1","--name","Refused"],"error":"regenerating 01a200ba-a41e-7039-8995-f6665ff5f8e7 failed: invalid input: block X length must be positive and finite, got 0 mm (nothing saved)","ok":false}
+{"args":["part","block","bracket.pxp","--size","p0*0.5","5","5","--name","Expr"],"ok":true,"parts":{"bracket.pxp":{"Base":"74a57aaa70ce352f","Boss":"64aea65d23019220","Datum Coordinate System(0)":null,"Expr":"f7ccb700c82a72be","Knob":"70904dd998dcd58c","Pin":"00d56981bb6e631f"}}}
+{"args":["part","verify","bracket.pxp"],"ok":true,"parts":{"bracket.pxp":{"Base":"74a57aaa70ce352f","Boss":"64aea65d23019220","Datum Coordinate System(0)":null,"Expr":"f7ccb700c82a72be","Knob":"70904dd998dcd58c","Pin":"00d56981bb6e631f"}}}
+{"args":["part","new","imperial.pxp","--units","in"],"ok":true,"parts":{"imperial.pxp":{"Datum Coordinate System(0)":null}}}
+{"args":["part","block","imperial.pxp","--size","2","1","0.5","--name","InchBlock"],"ok":true,"parts":{"imperial.pxp":{"Datum Coordinate System(0)":null,"InchBlock":"c362d9e76756b6f3"}}}
+{"args":["part","cylinder","imperial.pxp","--diameter","0.25","--height","1","--base","1","0.5","0","--name","InchPin"],"ok":true,"parts":{"imperial.pxp":{"Datum Coordinate System(0)":null,"InchBlock":"c362d9e76756b6f3","InchPin":"ee73a4c624e521f7"}}}
+{"args":["part","verify","imperial.pxp"],"ok":true,"parts":{"imperial.pxp":{"Datum Coordinate System(0)":null,"InchBlock":"c362d9e76756b6f3","InchPin":"ee73a4c624e521f7"}}}

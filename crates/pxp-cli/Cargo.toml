@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 pxp-units = { workspace = true }
+serde_json = { workspace = true }
 pxp-compute = { workspace = true }
 pxp-doc = { workspace = true }
 pxp-math = { workspace = true }

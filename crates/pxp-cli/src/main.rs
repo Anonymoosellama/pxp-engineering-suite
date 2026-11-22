@@ -14,6 +14,8 @@
 //! | `pxp-cli part info FILE` | Features, states, kernels, geometry hashes, and mass properties read from the stored exact B-reps |
 //! | `pxp-cli part verify FILE` | Re-imports every stored B-rep and regenerates every feature: hashes and bytes must match (exit 1 otherwise) |
 //! | `pxp-cli bakeoff [--corpus …] [--format summary\|markdown\|hashes]` | Runs the kernel bake-off corpus against the native backend |
+//! | `pxp-cli journal record FILE.pxj -- COMMAND …` / `journal replay FILE.pxj` | Records a session of commands with the geometry hashes they produce; replays it in a fresh directory and fails on any difference |
+//! | `pxp-cli mcp [--journal FILE.pxj]` | Model Context Protocol server on stdio running the same commands headless |
 //! | `pxp-cli stepstress [--repeat N] [--format summary\|markdown\|tsv\|details] FILE\|DIR...` | Imports STEP files (the NIST MBE PMI test models) with the native backend and stress-tests them: file-stated validation properties, round trips, boolean identities |
 //! | `pxp-cli apps` | Lists the six applications and when their commands arrive |
 //! | `pxp-cli commands [APP]` | Lists commands (all, or one application's) with status, ribbon placement and shortcut |
@@ -43,6 +45,8 @@
 #![forbid(unsafe_code)]
 
 mod bakeoff;
+mod journal;
+mod mcp;
 mod part;
 mod stepstress;
 
@@ -80,7 +84,7 @@ impl std::fmt::Display for CliError {
     }
 }
 
-const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|stepstress [...] FILE|DIR...|status|version>";
+const USAGE: &str = "usage: pxp-cli <apps|commands [APP]|find QUERY|shortcut KEYS|eval FORMULA [--let NAME=FORMULA]... [--units mm|in] [--decimals N]|part COMMAND FILE ...|bakeoff [...]|stepstress [...] FILE|DIR...|journal record|replay ...|mcp [--journal FILE]|status|version>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -97,6 +101,15 @@ fn main() -> ExitCode {
 }
 
 /// The geometry kernel this shell wires in: SolidCraft's, in-process.
+/// The kernel recorded in journals: backend and pinned revision.
+fn kernel_label() -> String {
+    format!(
+        "{}@{}",
+        pxp_kernel_native::BACKEND.0,
+        pxp_kernel_native::KERNEL_REVISION.get(..7).unwrap_or("?")
+    )
+}
+
 /// The backend a bake-off command names with `--kernel native|occt`
 /// (default: native). OCCT runs in its worker process
 /// (`pxp_kernel_occt::OcctConfig::from_env`); it is started here so a
@@ -166,6 +179,8 @@ fn run(args: &[String]) -> Result<String, CliError> {
         }
         "bakeoff" => bakeoff::run(rest, &*kernel_for(rest)?),
         "stepstress" => stepstress::run(rest, &*kernel_for(rest)?),
+        "journal" => journal::run(rest, run, part::feature_hashes, &kernel_label()),
+        "mcp" => mcp::run(rest, run, part::feature_hashes, &kernel_label()),
         "status" => Ok(status()),
         "version" | "--version" | "-V" => Ok(version()),
         "help" | "--help" | "-h" => Ok(format!("{USAGE}\n")),

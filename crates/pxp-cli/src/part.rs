@@ -141,6 +141,31 @@ fn open(path: &Path) -> Result<(PartFile, Document), CliError> {
     Ok((file, document))
 }
 
+/// Every feature of a part with its stored geometry hash (`None` for a
+/// feature without geometry), in creation order: what a journal records.
+///
+/// # Errors
+/// The part cannot be opened.
+pub(crate) fn feature_hashes(path: &Path) -> Result<Vec<(String, Option<u64>)>, CliError> {
+    let Opened { document, .. } = PartFile::open_read_only(path).map_err(cmd_err)?;
+    let snap = document.snapshot();
+    let mut features: Vec<&Object> = snap
+        .objects()
+        .filter(|o| primitives::is_primitive_kind(&o.kind))
+        .collect();
+    features.sort_by_key(|o| o.id());
+    Ok(features
+        .into_iter()
+        .map(|o| {
+            let name = o
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("{} {}", kind_label(&o.kind), o.id()));
+            (name, stored_hash(o))
+        })
+        .collect())
+}
+
 fn feature_count(doc: &Document) -> usize {
     doc.snapshot()
         .objects()
