@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //! Headless GPU tests of the viewport: they run wherever an adapter exists
 //! (a software rasteriser is enough: lavapipe on Linux CI, WARP on Windows)
-//! and skip, saying so, where none does.
+//! and skip, saying so, where none does. They take turns on the GPU (see
+//! `Gpu`): one device at a time, as in the product.
 //!
 //! Crash tracing. A driver crash kills the test process, and libtest's
 //! captured output dies with it, so the log cannot say what was running.
@@ -71,12 +72,48 @@ fn install_log() {
     });
 }
 
-fn gpu() -> Option<GpuContext> {
+/// One test's GPU: its own device, plus this process's GPU turn.
+///
+/// The tests take turns on the GPU: `gpu()` blocks until no other test
+/// holds a device. Several devices rendering and reading back at once, one
+/// per test thread, crashed the process with an access violation on
+/// Windows ARM64's software rasteriser (WARP through Direct3D 12; CI run
+/// 45063743207, job `windows-arm-gpu-diagnostics`): the same six tests pass
+/// there one at a time, with wgpu validation on or off, and passed in
+/// parallel on Windows x64 (WARP) and Linux (lavapipe). PXP itself never
+/// drives several devices at once (the shell renders on one device from
+/// the UI thread), so the tests now run the way the product does instead
+/// of exercising a driver path it never takes.
+///
+/// Field order matters: Rust drops fields in declaration order, so the
+/// device (`ctx`) is released before the turn (`_turn`) passes to the next
+/// test, and no two devices are ever alive at the same time.
+struct Gpu {
+    ctx: GpuContext,
+    _turn: std::sync::MutexGuard<'static, ()>,
+}
+
+impl std::ops::Deref for Gpu {
+    type Target = GpuContext;
+
+    /// Lets tests pass `&gpu` wherever a `&GpuContext` is expected.
+    fn deref(&self) -> &GpuContext {
+        &self.ctx
+    }
+}
+
+fn gpu() -> Option<Gpu> {
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
     install_log();
+    // A test that panicked while holding the turn poisons the mutex; the
+    // `()` inside cannot be left half-updated, so the next test proceeds.
+    let turn = TURN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     trace("create instance, adapter and device");
     match GpuContext::headless() {
         Ok(c) => {
-            // Backend, driver and device type: which path the crash is on.
+            // Backend, driver and device type: which path a crash is on.
             trace(&format!(
                 "adapter {:?} backend {:?} type {:?} driver {:?} {:?}",
                 c.adapter.name,
@@ -85,7 +122,10 @@ fn gpu() -> Option<GpuContext> {
                 c.adapter.driver,
                 c.adapter.driver_info
             ));
-            Some(c)
+            Some(Gpu {
+                ctx: c,
+                _turn: turn,
+            })
         }
         Err(e) => {
             eprintln!("skipping GPU test: {e}");
