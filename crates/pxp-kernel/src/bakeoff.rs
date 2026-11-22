@@ -11,6 +11,8 @@
 //!   contacts, tiny and near-tolerance features, voids, empty results,
 //!   refusals), each with its expected answer worked out in its
 //!   description.
+//! - [`generated_cases`]: families that sweep one parameter (count, offset,
+//!   angle, scale) through constructions with closed-form answers.
 //! - [`solidcraft_cases`]: SolidCraft's kernel regression cases that can be
 //!   expressed with primitives and booleans, converted from SolidCraft's
 //!   `tests/kernel-cases` by `tools/import_solidcraft_cases.py` (MIT; the
@@ -55,11 +57,13 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Instant;
 
+mod families;
 mod p21;
 mod solidcraft;
 mod step;
 mod synthetic;
 
+pub use families::cases as generated_cases;
 pub use p21::{Declared, ValidationProperties, validation_properties};
 pub use solidcraft::cases as solidcraft_cases;
 pub use step::{
@@ -565,6 +569,7 @@ impl Report {
         for (label, prefix) in [
             ("Synthetic stress", "syn/"),
             ("SolidCraft reference", "solidcraft/"),
+            ("Generated families", "gen/"),
             ("All", ""),
         ] {
             let (p, f, e, d) = self.tally(prefix);

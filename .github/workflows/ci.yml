@@ -92,13 +92,14 @@ jobs:
         run: cargo doc --workspace --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
-      # Kernel bake-off corpus: one geometry hash per case, compared across
-      # every OS by the `determinism` job (master prompt: recompute is
-      # deterministic on every OS, and CI tests it).
+      # Kernel bake-off core corpus (the hand-written cases): one geometry
+      # hash per case, compared across every OS by the `determinism` job
+      # (master prompt: recompute is deterministic on every OS, and CI tests
+      # it). The generated families and the NIST files run nightly.
       - name: Kernel bake-off hashes
         shell: bash
         run: |
-          cargo run -p pxp-cli --locked -- bakeoff --repeat 1 --format details --quiet > bakeoff-details.txt
+          cargo run -p pxp-cli --locked -- bakeoff --corpus core --repeat 1 --format details --quiet > bakeoff-details.txt
           cat bakeoff-details.txt
           cut -d' ' -f1-3 bakeoff-details.txt > bakeoff-hashes.txt
       - uses: actions/upload-artifact@v4
