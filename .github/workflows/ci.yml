@@ -76,7 +76,9 @@ jobs:
           - ubuntu-24.04        # Linux x86_64
           - ubuntu-24.04-arm    # Linux aarch64
           - windows-2025        # Windows x64
-          - windows-11-arm      # Windows ARM64
+          # Windows ARM64 (windows-11-arm) is out of the build for now: user
+          # decision 2026-11-22, after the GPU tests crashed on that runner.
+          # See the `windows-arm-gpu-diagnostics` job below.
           - macos-15            # macOS arm64
           - macos-15-intel      # macOS x86_64
     runs-on: ${{ matrix.os }}
@@ -91,17 +93,19 @@ jobs:
         id: tests
         run: cargo test --workspace --locked
       # Runs only when the step above failed. When the headless GPU tests
-      # crash the process (windows-11-arm, run 45059312172: exit 0xc0000005
-      # inside `tests/gpu.rs`), libtest's captured output dies with it and
-      # the log cannot say which test crashed. One test at a time, with
-      # output shown, prints each test's name before it runs, so the last
-      # name in the log is the one that crashed. If this step passes, the
-      # crash needs tests running in parallel on one adapter.
+      # crash the process (as on windows-11-arm in run 45059312172: exit
+      # 0xc0000005 inside `tests/gpu.rs`), libtest's captured output dies
+      # with it and the log cannot say what was running. One test at a
+      # time with output shown prints each test's name and its
+      # `[gpu-test ...]` step markers (tests/gpu.rs), plus wgpu's own log at
+      # `info`, so the last lines in the log name the crashing step. If this
+      # step passes, the failure needs tests running in parallel.
       - name: GPU tests one at a time (diagnostics after a failure)
         if: failure() && steps.tests.outcome == 'failure'
         run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
         env:
           RUST_BACKTRACE: "1"
+          PXP_GPU_LOG: info
       - name: Rustdoc (warnings are errors)
         run: cargo doc --workspace --no-deps --locked
         env:
@@ -134,6 +138,50 @@ jobs:
           pattern: bakeoff-hashes-*
       - name: Compare every OS with Linux x86_64
         run: python3 tools/ci/compare_hashes.py tools/ci/known-cross-os-differences.txt ubuntu-24.04 bakeoff-hashes-*
+
+  # Windows ARM64 is out of the build for now (user decision 2026-11-22): no
+  # clippy/test/doc, packaging or determinism coverage, and nothing depends
+  # on this job. `continue-on-error` keeps its result out of the run's
+  # conclusion. It exists only to find why the headless GPU tests crash on
+  # this runner (exit 0xc0000005 in run 45059312172, after the Direct3D
+  # shader fix; WARP, the Windows software rasteriser, is the adapter
+  # there) and is removed once the cause is fixed or Windows ARM64 returns
+  # to the `test` matrix.
+  #
+  # Each step isolates one variable, and every step runs even after an
+  # earlier one crashed (`if: always()`):
+  #   1. one test at a time, wgpu validation on (the debug build's default,
+  #      which loads the Direct3D 12 debug layer): which test and step;
+  #   2. one test at a time, validation and debug off: is the crash inside
+  #      the debug layer;
+  #   3. all tests in parallel, as `cargo test` runs them: does it need
+  #      several devices at once.
+  windows-arm-gpu-diagnostics:
+    name: Windows ARM64 GPU crash diagnostics (not part of the build)
+    runs-on: windows-11-arm
+    continue-on-error: true
+    env:
+      RUST_BACKTRACE: "1"
+      PXP_GPU_LOG: info
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the GPU tests
+        run: cargo test -p pxp-render --test gpu --locked --no-run
+      - name: 1. One at a time, validation on
+        if: always()
+        run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
+      - name: 2. One at a time, validation and debug off
+        if: always()
+        run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
+        env:
+          WGPU_VALIDATION: "0"
+          WGPU_DEBUG: "0"
+      - name: 3. All in parallel, validation on
+        if: always()
+        run: cargo test -p pxp-render --test gpu --locked -- --nocapture
 
   # The OCCT backend runs in a worker process (pxp-kernel-occt). The worker
   # is Python on the OCP bindings (cadquery-ocp, OCCT 7.8.1) until the

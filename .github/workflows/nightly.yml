@@ -48,7 +48,8 @@ jobs:
           - ubuntu-24.04
           - ubuntu-24.04-arm
           - windows-2025
-          - windows-11-arm
+          # windows-11-arm: out of the build for now (user decision
+          # 2026-11-22; see ci.yml, `windows-arm-gpu-diagnostics`).
           - macos-15
           - macos-15-intel
     runs-on: ${{ matrix.os }}
