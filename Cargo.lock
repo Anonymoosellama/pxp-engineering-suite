@@ -414,6 +414,7 @@ dependencies = [
  "pxp-ui",
  "pxp-units",
  "pxp-vnc",
+ "serde_json",
 ]
 
 [[package]]
@@ -544,6 +545,7 @@ dependencies = [
  "pxp-kernel",
  "pxp-math",
  "pxp-units",
+ "serde_json",
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ use pxp_kernel::bakeoff::{self, Case, Report, Status};
 use std::fmt::Write as _;
 
 pub(crate) const USAGE: &str = "\
-usage: pxp-cli bakeoff [--corpus all|core|synthetic|solidcraft|generated] [--filter TEXT] [--repeat N]
+usage: pxp-cli bakeoff [--kernel native|occt] [--corpus all|core|synthetic|solidcraft|generated] [--filter TEXT] [--repeat N]
                        [--format summary|markdown|hashes|details] [--include-slow] [--quiet]";
 
 fn usage(m: impl Into<String>) -> CliError {
@@ -55,6 +55,10 @@ impl<'a> Options<'a> {
                 }
                 "--format" => o.format = value()?,
                 "--quiet" => o.quiet = true,
+                // Chosen by main.rs before the run starts.
+                "--kernel" => {
+                    value()?;
+                }
                 "--include-slow" => o.include_slow = true,
                 "help" | "--help" | "-h" => return Ok(None),
                 other => return Err(usage(format!("unknown option {other}"))),

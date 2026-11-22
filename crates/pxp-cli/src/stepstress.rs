@@ -21,7 +21,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 pub(crate) const USAGE: &str = "\
-usage: pxp-cli stepstress [--repeat N] [--format summary|markdown|tsv|details] [--header]
+usage: pxp-cli stepstress [--kernel native|occt] [--repeat N] [--format summary|markdown|tsv|details] [--header]
                           [--details FILE] [--quiet] FILE|DIR...
   Imports each STEP file (a DIR contributes its *.stp and *.step files, sorted) with the
   native backend and stress-tests it; see `pxp_kernel::bakeoff` for the checks.
@@ -70,6 +70,10 @@ impl<'a> Options<'a> {
                 "--header" => o.header = true,
                 "--details" => o.details = Some(value()?),
                 "--quiet" => o.quiet = true,
+                // Chosen by main.rs before the run starts.
+                "--kernel" => {
+                    value()?;
+                }
                 "help" | "--help" | "-h" => return Ok(None),
                 other if other.starts_with("--") => {
                     return Err(usage(format!("unknown option {other}")));

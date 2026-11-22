@@ -16,3 +16,4 @@ workspace = true
 pxp-kernel = { workspace = true }
 pxp-math = { workspace = true }
 pxp-units = { workspace = true }
+serde_json = { workspace = true }

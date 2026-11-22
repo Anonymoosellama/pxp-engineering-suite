@@ -97,6 +97,29 @@ fn main() -> ExitCode {
 }
 
 /// The geometry kernel this shell wires in: SolidCraft's, in-process.
+/// The backend a bake-off command names with `--kernel native|occt`
+/// (default: native). OCCT runs in its worker process
+/// (`pxp_kernel_occt::OcctConfig::from_env`); it is started here so a
+/// missing worker is reported before any case runs.
+fn kernel_for(args: &[String]) -> Result<Arc<KernelHost>, CliError> {
+    let chosen = args
+        .iter()
+        .position(|a| a == "--kernel")
+        .map(|i| args.get(i + 1).map_or("", String::as_str));
+    match chosen {
+        None | Some("native") => Ok(native_kernel()),
+        Some("occt") => {
+            let k = pxp_kernel_occt::OcctKernel::new(pxp_kernel_occt::OcctConfig::from_env());
+            k.connect()
+                .map_err(|e| CliError::Command(format!("cannot start OCCT: {e}")))?;
+            Ok(Arc::new(KernelHost::in_process(Box::new(k))))
+        }
+        Some(other) => Err(CliError::Usage(format!(
+            "unknown kernel '{other}' (native or occt)"
+        ))),
+    }
+}
+
 fn native_kernel() -> Arc<KernelHost> {
     Arc::new(KernelHost::in_process(Box::new(
         pxp_kernel_native::NativeKernel::new(),
@@ -141,8 +164,8 @@ fn run(args: &[String]) -> Result<String, CliError> {
             let registry = builtin_registry(Some(Arc::clone(&kernel)))?;
             part::run(rest, &registry, &kernel)
         }
-        "bakeoff" => bakeoff::run(rest, &native_kernel()),
-        "stepstress" => stepstress::run(rest, &native_kernel()),
+        "bakeoff" => bakeoff::run(rest, &*kernel_for(rest)?),
+        "stepstress" => stepstress::run(rest, &*kernel_for(rest)?),
         "status" => Ok(status()),
         "version" | "--version" | "-V" => Ok(version()),
         "help" | "--help" | "-h" => Ok(format!("{USAGE}\n")),
