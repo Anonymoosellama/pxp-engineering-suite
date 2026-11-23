@@ -1,0 +1,4 @@
+# NIST STEP test models are kept byte-for-byte as NIST published them (their
+# SHA-256 is recorded next to them): no line-ending conversion.
+crates/pxp-cli/tests/data/*.stp -text
+docs/verification/samples/*.pxp binary

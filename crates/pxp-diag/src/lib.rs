@@ -5,9 +5,9 @@
 //!
 //! Turns errors and caught panics into an [`ErrorReport`]: the text behind the
 //! "copy report" button the master prompt requires whenever a command fails.
-//! Later in Stage 0 (sub-stage 0J) this crate also owns structured tracing and
-//! the **local** crash reporter. There is no telemetry: reports are written
-//! to disk or the clipboard, never sent anywhere.
+//! It also owns the **local** crash reporter ([`crash`]): a panic hook that
+//! writes a report file per panic. There is no telemetry: reports are
+//! written to disk or the clipboard, never sent anywhere.
 //!
 //! ## Data flow
 //!
@@ -27,6 +27,8 @@
 //! - Send data over the network (no telemetry, per the master prompt).
 //! - Include document contents in a report unless the user adds them.
 #![forbid(unsafe_code)]
+
+pub mod crash;
 
 use std::any::Any;
 use std::error::Error;

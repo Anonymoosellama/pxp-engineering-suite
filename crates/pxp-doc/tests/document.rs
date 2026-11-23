@@ -208,6 +208,21 @@ fn new_edit_after_undo_clears_redo() {
 }
 
 #[test]
+fn clearing_undo_keeps_the_state_and_forgets_the_steps() {
+    let mut d = doc();
+    d.transact("A", |tx| tx.set_expression("a", "1")).unwrap();
+    d.transact("B", |tx| tx.set_expression("b", "2")).unwrap();
+    d.undo().unwrap();
+    d.clear_undo();
+    assert!(!d.can_undo() && !d.can_redo());
+    assert_eq!(d.undo_memory_used(), 0);
+    assert!(d.snapshot().expression("a").is_some(), "the state is kept");
+    assert!(d.snapshot().expression("b").is_none());
+    d.transact("C", |tx| tx.set_expression("c", "3")).unwrap();
+    assert_eq!(d.undo().unwrap(), "C", "new steps record as before");
+}
+
+#[test]
 fn edits_propagate_out_of_date_and_recompute_restores() {
     let mut d = doc();
     let (_, double, chain) = three_level_model(&mut d);

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 [package]
 name = "pxp-render"
-description = "wgpu viewer: shaded and wireframe display, GPU ID-buffer picking, edges, silhouettes, section clipping."
+description = "wgpu viewer: shaded display, B-rep edges, silhouettes, section clipping, GPU id-buffer picking, NX view controls."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,10 @@ publish = false
 workspace = true
 
 [dependencies]
-pxp-tess = { workspace = true }
-pxp-math = { workspace = true }
-pxp-doc = { workspace = true }
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+pollster = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+log = { workspace = true }

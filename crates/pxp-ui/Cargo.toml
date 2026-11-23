@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 [package]
 name = "pxp-ui"
-description = "Ribbon, resource bar, navigators, top border bar, dialog framework, cue and status lines."
+description = "NX-style shell: data-driven ribbon, resource bar navigators, top border bar, dialog framework, Command Finder, cue and status lines."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,5 +14,15 @@ workspace = true
 
 [dependencies]
 pxp-appkit = { workspace = true }
+pxp-app-modeling = { workspace = true }
 pxp-render = { workspace = true }
 pxp-doc = { workspace = true }
+pxp-kernel = { workspace = true }
+pxp-units = { workspace = true }
+pxp-diag = { workspace = true }
+eframe = { workspace = true }
+egui_dock = { workspace = true }
+image = { workspace = true }
+
+[dev-dependencies]
+pxp-app-drafting = { workspace = true }

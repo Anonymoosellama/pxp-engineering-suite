@@ -1,0 +1,13 @@
+{
+  "_comment": "Stage 0 performance budgets, checked by tools/ci/check_bench.py in the CI bench job. budget_ms is an absolute ceiling on a CI runner (about 3x the 2026-11-21 measurement on a 2-vCPU machine, so a slower runner still passes); the job also fails any benchmark that regresses more than 10 % against the base commit on the same runner. See docs/design/performance-budgets.md.",
+  "benchmarks": {
+    "doc/edit-one-of-100k": { "budget_ms": 2.0, "measured_ms": 0.296, "what": "one expression edit, committed, in a 100 000-object document: interactive edits must stay far below a 16 ms frame" },
+    "doc/undo-redo-100-steps": { "budget_ms": 10.0, "measured_ms": 0.753, "what": "100 undo steps then 100 redo steps (the Stage 0 gate's undo check) in a 1 000-object document" },
+    "doc/recompute-chain-1000": { "budget_ms": 100.0, "measured_ms": 18.2, "what": "edit the head of a 1 000-expression dependency chain and recompute it: recompute time" },
+    "file/open-10k-objects": { "budget_ms": 250.0, "measured_ms": 24.2, "what": "open a part with 10 000 objects read-only: open time" },
+    "file/save-10k-objects": { "budget_ms": 250.0, "measured_ms": 27.3, "what": "save a part with 10 000 objects (atomic replace, journal reset)" },
+    "kernel/native/block": { "budget_ms": 10.0, "measured_ms": 2.48, "what": "a block through KernelHost::op (history checked), released" },
+    "kernel/native/drill-block": { "budget_ms": 30.0, "measured_ms": 8.99, "what": "a block minus a through cylinder: the commonest feature recompute" },
+    "kernel/native/mass-properties": { "budget_ms": 35.0, "measured_ms": 10.3, "what": "volume, area and centroid of the drilled block (Information, mass checks)" }
+  }
+}

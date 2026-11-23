@@ -3,11 +3,12 @@
 # CI for every push and pull request. Nothing counts as done until every job
 # here is green on every OS (master prompt, "Session loop").
 #
-# Not yet present, added as their crates land (never as empty jobs):
-#   - criterion benchmarks   -> with the performance budgets (0J)
-#   - packaging (MSI/MSIX, DMG, AppImage, Flatpak, .deb) -> with pxp-app (0H/0J)
-#   - nightly long fuzzing and the slow kernel cases (`bakeoff --include-slow`)
-#     -> .github/workflows/nightly.yml
+# Packaging (`package`) builds unsigned archives on every OS: a .zip on
+# Windows, a .app in a .dmg on macOS, a .tar.gz and a .deb on Linux. Signing
+# needs the user's certificates (a decision in STATUS.md); MSI/MSIX,
+# AppImage and Flatpak follow in Stage 1.
+# Nightly (long fuzzing, the full bake-off corpus on both kernels, the NIST
+# STEP files) lives in .github/workflows/nightly.yml.
 
 name: ci
 
@@ -75,7 +76,9 @@ jobs:
           - ubuntu-24.04        # Linux x86_64
           - ubuntu-24.04-arm    # Linux aarch64
           - windows-2025        # Windows x64
-          - windows-11-arm      # Windows ARM64
+          # Windows ARM64 (windows-11-arm) is out of the build for now: user
+          # decision 2026-11-22, after the GPU tests crashed on that runner.
+          # See the `windows-arm-gpu-diagnostics` job below.
           - macos-15            # macOS arm64
           - macos-15-intel      # macOS x86_64
     runs-on: ${{ matrix.os }}
@@ -87,18 +90,34 @@ jobs:
       - name: Clippy (pedantic, warnings are errors)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
+        id: tests
         run: cargo test --workspace --locked
+      # Runs only when the step above failed. When the headless GPU tests
+      # crash the process (as on windows-11-arm in run 45059312172: exit
+      # 0xc0000005 inside `tests/gpu.rs`), libtest's captured output dies
+      # with it and the log cannot say what was running. One test at a
+      # time with output shown prints each test's name and its
+      # `[gpu-test ...]` step markers (tests/gpu.rs), plus wgpu's own log at
+      # `info`, so the last lines in the log name the crashing step. If this
+      # step passes, the failure needs tests running in parallel.
+      - name: GPU tests one at a time (diagnostics after a failure)
+        if: failure() && steps.tests.outcome == 'failure'
+        run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
+        env:
+          RUST_BACKTRACE: "1"
+          PXP_GPU_LOG: info
       - name: Rustdoc (warnings are errors)
         run: cargo doc --workspace --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
-      # Kernel bake-off corpus: one geometry hash per case, compared across
-      # every OS by the `determinism` job (master prompt: recompute is
-      # deterministic on every OS, and CI tests it).
+      # Kernel bake-off core corpus (the hand-written cases): one geometry
+      # hash per case, compared across every OS by the `determinism` job
+      # (master prompt: recompute is deterministic on every OS, and CI tests
+      # it). The generated families and the NIST files run nightly.
       - name: Kernel bake-off hashes
         shell: bash
         run: |
-          cargo run -p pxp-cli --locked -- bakeoff --repeat 1 --format details --quiet > bakeoff-details.txt
+          cargo run -p pxp-cli --locked -- bakeoff --corpus core --repeat 1 --format details --quiet > bakeoff-details.txt
           cat bakeoff-details.txt
           cut -d' ' -f1-3 bakeoff-details.txt > bakeoff-hashes.txt
       - uses: actions/upload-artifact@v4
@@ -119,3 +138,215 @@ jobs:
           pattern: bakeoff-hashes-*
       - name: Compare every OS with Linux x86_64
         run: python3 tools/ci/compare_hashes.py tools/ci/known-cross-os-differences.txt ubuntu-24.04 bakeoff-hashes-*
+
+  # Windows ARM64 is out of the build for now (user decision 2026-11-22): no
+  # clippy/test/doc, packaging or determinism coverage, and nothing depends
+  # on this job. `continue-on-error` keeps its result out of the run's
+  # conclusion. It exists only to find why the headless GPU tests crash on
+  # this runner (exit 0xc0000005 in run 45059312172, after the Direct3D
+  # shader fix; WARP, the Windows software rasteriser, is the adapter
+  # there) and is removed once the cause is fixed or Windows ARM64 returns
+  # to the `test` matrix.
+  #
+  # Each step isolates one variable, and every step runs even after an
+  # earlier one crashed (`if: always()`):
+  #   1. one test at a time, wgpu validation on (the debug build's default,
+  #      which loads the Direct3D 12 debug layer): which test and step;
+  #   2. one test at a time, validation and debug off: is the crash inside
+  #      the debug layer;
+  #   3. all tests in parallel, as `cargo test` runs them: does it need
+  #      several devices at once.
+  windows-arm-gpu-diagnostics:
+    name: Windows ARM64 GPU crash diagnostics (not part of the build)
+    runs-on: windows-11-arm
+    continue-on-error: true
+    env:
+      RUST_BACKTRACE: "1"
+      PXP_GPU_LOG: info
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the GPU tests
+        run: cargo test -p pxp-render --test gpu --locked --no-run
+      - name: 1. One at a time, validation on
+        if: always()
+        run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
+      - name: 2. One at a time, validation and debug off
+        if: always()
+        run: cargo test -p pxp-render --test gpu --locked -- --test-threads=1 --nocapture
+        env:
+          WGPU_VALIDATION: "0"
+          WGPU_DEBUG: "0"
+      - name: 3. All in parallel, validation on
+        if: always()
+        run: cargo test -p pxp-render --test gpu --locked -- --nocapture
+
+  # The OCCT backend runs in a worker process (pxp-kernel-occt). The worker
+  # is Python on the OCP bindings (cadquery-ocp, OCCT 7.8.1) until the
+  # native worker lands; its conformance tests skip without it, so this job
+  # installs it and makes them run, then compares its bake-off hashes
+  # across operating systems.
+  occt:
+    name: OCCT worker conformance + bake-off (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install OCP (OCCT 7.8.1 Python bindings)
+        run: python -m pip install "cadquery-ocp==7.8.1.1"
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Worker conformance tests
+        shell: bash
+        run: |
+          export PXP_OCCT_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+          cargo test -p pxp-kernel-occt --locked
+      - name: Bake-off on OCCT
+        shell: bash
+        run: |
+          export PXP_OCCT_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+          cargo run -p pxp-cli --locked -- bakeoff --kernel occt --corpus all --repeat 1 --format details --quiet > occt-details.txt
+          cut -d' ' -f1-3 occt-details.txt > bakeoff-hashes.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: occt-hashes-${{ matrix.os }}
+          path: |
+            bakeoff-hashes.txt
+            occt-details.txt
+
+  occt-determinism:
+    name: OCCT hashes identical across OSes
+    needs: occt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: occt-hashes-*
+      - name: Compare every OS with Linux x86_64
+        run: |
+          for d in occt-hashes-*; do mv "$d" "bakeoff-hashes-${d#occt-hashes-}"; done
+          python3 tools/ci/compare_hashes.py tools/ci/known-occt-differences.txt ubuntu-24.04 bakeoff-hashes-*
+
+  # Performance budgets (master prompt: tracked with criterion in CI; a
+  # regression beyond 10 % fails the build). On a pull request the base
+  # commit is benchmarked first on the same runner, so the comparison is
+  # not between two different machines; on a push only the absolute
+  # budgets are checked. Budgets: docs/design/performance-budgets.json.
+  bench:
+    name: benchmarks within budget
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Benchmark the base commit (pull requests)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          git worktree add ../base "${{ github.event.pull_request.base.sha }}"
+          cd ../base
+          # The base may predate a benchmark; missing ones are skipped.
+          for b in doc:pxp-doc file:pxp-format kernel:pxp-kernel-native; do
+            bench=${b%%:*}; crate=${b#*:}
+            if [ -f "crates/$crate/benches/$bench.rs" ]; then
+              CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" cargo bench -p "$crate" --bench "$bench" --locked -- --save-baseline base
+            fi
+          done
+      - name: Benchmark this commit
+        shell: bash
+        run: |
+          baseline=""
+          if [ "${{ github.event_name }}" = pull_request ]; then baseline="--baseline-lenient base"; fi
+          for b in doc:pxp-doc file:pxp-format kernel:pxp-kernel-native; do
+            cargo bench -p "${b#*:}" --bench "${b%%:*}" --locked -- $baseline
+          done
+      - name: Check budgets and regressions
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/ci/check_bench.py target/criterion docs/design/performance-budgets.json --max-regression 0.10 | tee -a "$GITHUB_STEP_SUMMARY"
+
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Lower peak compile memory for SolidCore on the smaller runners.
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "64"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binaries
+        run: cargo build --release --locked -p pxp-app -p pxp-cli
+      - name: Package (Linux .tar.gz and .deb)
+        if: runner.os == 'Linux'
+        run: |
+          v=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="pxp-app"))')
+          d=pxp-$v-linux-x86_64; mkdir -p $d && cp target/release/pxp target/release/pxp-cli LICENSE README.md $d/
+          tar czf $d.tar.gz $d
+          root=deb/pxp_$v; mkdir -p $root/DEBIAN $root/usr/bin $root/usr/share/doc/pxp
+          cp target/release/pxp target/release/pxp-cli $root/usr/bin/ && cp LICENSE $root/usr/share/doc/pxp/copyright
+          printf 'Package: pxp\nVersion: %s\nArchitecture: amd64\nMaintainer: PXP Engineering Suite\nDescription: PXP Engineering Suite (pre-alpha)\n' "$v" > $root/DEBIAN/control
+          dpkg-deb --build --root-owner-group $root pxp_${v}_amd64.deb
+      - name: Package (Windows .zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory pxp-windows-x64 | Out-Null
+          Copy-Item target/release/pxp.exe, target/release/pxp-cli.exe, LICENSE, README.md pxp-windows-x64/
+          Compress-Archive pxp-windows-x64 pxp-windows-x64.zip
+      - name: Package (macOS .app in a .dmg)
+        if: runner.os == 'macOS'
+        run: |
+          app="PXP Engineering Suite.app"; mkdir -p "$app/Contents/MacOS"
+          cp target/release/pxp target/release/pxp-cli "$app/Contents/MacOS/"
+          cat > "$app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>PXP Engineering Suite</string>
+          <key>CFBundleIdentifier</key><string>org.pxp.suite</string>
+          <key>CFBundleExecutable</key><string>pxp</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          </dict></plist>
+          PLIST
+          # hdiutil sizes its temporary image from -srcfolder and sometimes
+          # sizes it too small: run 45064274547 failed with "No space left
+          # on device" on the image's own volume (/Volumes/PXP), while the
+          # same step passed on the two runs before. An explicit -size
+          # avoids the estimate: the bundle's size plus 20 % and 20 MB for
+          # the file system's own overhead. UDZO compresses the result, so
+          # the .dmg is no larger for the headroom.
+          size_mb=$(( $(du -sm "$app" | cut -f1) * 12 / 10 + 20 ))
+          echo "app bundle $(du -sh "$app" | cut -f1); image size ${size_mb} MB"
+          hdiutil create -volname PXP -srcfolder "$app" -size "${size_mb}m" -ov -format UDZO pxp-macos-$(uname -m).dmg
+      - name: Smoke test the packaged binaries
+        shell: bash
+        run: |
+          target/release/pxp --version
+          target/release/pxp-cli status
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pxp-${{ matrix.os }}
+          path: |
+            *.tar.gz
+            *.deb
+            *.zip
+            *.dmg

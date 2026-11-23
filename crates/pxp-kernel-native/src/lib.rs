@@ -71,11 +71,11 @@ mod hash;
 mod history;
 
 use pxp_kernel::{
-    BackendId, BlockSpec, BodyKind, BooleanOp, Capabilities, ConeSpec, CylinderSpec,
-    GeometryKernel, KernelError, MassProperties, MergedCounts, OpResult, ShapeHandle, SphereSpec,
-    TopoHistory, TopoId, TopoKind,
+    BackendId, BlockSpec, BodyKind, BooleanOp, Capabilities, ConeSpec, CylinderSpec, FacetMesh,
+    GeometryKernel, ImportedShape, KernelError, MassProperties, MergedCounts, MeshTolerance,
+    OpResult, ShapeHandle, SphereSpec, StepImport, TopoHistory, TopoId, TopoKind,
 };
-use pxp_math::{Csys, Point3, UnitVec3};
+use pxp_math::{Aabb, Csys, Point3, UnitVec3};
 use pxp_units::{Area, Length, Volume};
 use solidcore_record::brep::{Brep, Shell};
 use solidcore_record::{Loop2, Plane, Region2, Seg2, Vec2, Vec3};
@@ -98,7 +98,7 @@ pub const BACKEND: BackendId = BackendId("solidcraft");
 pub const KERNEL_REVISION: &str = "2091b8828c328d5ab0a0f162dbc7a36a558aa99d";
 
 /// Operation names reported in [`Capabilities`].
-const OPS: [&str; 12] = [
+const OPS: [&str; 17] = [
     "block",
     "cylinder",
     "cone",
@@ -111,6 +111,11 @@ const OPS: [&str; 12] = [
     "merged_counts",
     "export_native",
     "import_native",
+    "bounding_box",
+    "import_step",
+    "export_step",
+    "tessellate",
+    "check_validity",
 ];
 
 /// SolidCraft behind the `GeometryKernel` trait. Thread-safe: the recompute
@@ -509,6 +514,130 @@ impl GeometryKernel for NativeKernel {
             KernelError::InvalidInput(format!("not a readable SolidCraft native body: {e}"))
         })?;
         Ok(self.store(body))
+    }
+
+    fn bounding_box(&self, shape: ShapeHandle) -> Result<Aabb, KernelError> {
+        let body = self.get(shape)?;
+        // SolidCraft's exact box (SMLib's, on the surfaces) for a B-rep; a
+        // mesh body's box is its triangles' own, which is exact for it.
+        let m = solidcraft_kernel::measure_mass(&body).map_err(kernel_err("bounding_box"))?;
+        let (lo, hi) = (m.bbox.min, m.bbox.max);
+        Ok(Aabb::from_points([
+            Point3::new(lo.x, lo.y, lo.z),
+            Point3::new(hi.x, hi.y, hi.z),
+        ]))
+    }
+
+    /// SMLib's full check (`solidcraft_kernel::failing_check`, every test
+    /// level) on a copy of the body, as an operation on it would run it.
+    /// A mesh body is not SMLib's to check and passes.
+    fn check_validity(&self, shape: ShapeHandle) -> Result<Vec<String>, KernelError> {
+        let body = self.get(shape)?;
+        let failure =
+            solidcraft_kernel::failing_check(&body).map_err(kernel_err("check_validity"))?;
+        Ok(failure.map_or_else(Vec::new, |f| {
+            f.tests
+                .iter()
+                .map(|t| format!("{} (×{})", t.name, t.times))
+                .collect()
+        }))
+    }
+
+    /// SolidCraft's own STEP reader (`solidcraft_kernel::step_import`,
+    /// written from the public standards): the uncached path, so reading
+    /// the same text twice really reads it twice. It waits for SMLib's
+    /// check of every part; the check's findings and the reader's repairs
+    /// are in the warnings.
+    fn import_step(&self, text: &str) -> Result<StepImport, KernelError> {
+        let imp = solidcraft_kernel::step_import(text).map_err(kernel_err("import_step"))?;
+        let report = imp.report.current();
+        let (parts, closed_parts) = (report.parts, report.solids);
+        let schema = imp.schema.clone();
+        let warnings = imp.warnings.clone();
+        let shapes = imp
+            .bodies
+            .into_iter()
+            .map(|b| {
+                let mesh = b.body.is_mesh();
+                ImportedShape {
+                    name: b.name,
+                    closed: b.closed && b.refused.is_none(),
+                    mesh,
+                    shape: self.store(b.body),
+                }
+            })
+            .collect();
+        Ok(StepImport {
+            shapes,
+            parts,
+            closed_parts,
+            schema,
+            warnings,
+        })
+    }
+
+    /// SolidCraft's STEP writer, one product per shape, named `body-<n>`,
+    /// with an empty time stamp so the text depends on the geometry alone.
+    fn export_step(&self, shapes: &[ShapeHandle]) -> Result<String, KernelError> {
+        let bodies = shapes
+            .iter()
+            .map(|s| self.get(*s))
+            .collect::<Result<Vec<_>, _>>()?;
+        let export: Vec<solidcraft_kernel::ExportBody<'_>> = bodies
+            .iter()
+            .enumerate()
+            .map(|(i, b)| solidcraft_kernel::ExportBody {
+                name: format!("body-{}", i + 1),
+                body: b.as_ref(),
+                color: None,
+            })
+            .collect();
+        let header = solidcraft_kernel::StepHeader {
+            file_name: "pxp-export.stp".into(),
+            description: "PXP Engineering Suite".into(),
+            ..solidcraft_kernel::StepHeader::default()
+        };
+        solidcraft_kernel::step_export_bodies(&export, &header).map_err(kernel_err("export_step"))
+    }
+
+    /// SolidCraft's mesher (`Body::mesh`): triangles carry their face
+    /// index in record order, which is `topology()`'s face order, and
+    /// neighbouring faces share boundary nodes, so the mesh is watertight
+    /// wherever the B-rep is. Seam polylines are left out of the edges.
+    fn tessellate(
+        &self,
+        shape: ShapeHandle,
+        tolerance: &MeshTolerance,
+    ) -> Result<FacetMesh, KernelError> {
+        let body = self.get(shape)?;
+        let mesh = body
+            .mesh(&solidcraft_kernel::MeshTolerance {
+                chord: tolerance.chord.mm(),
+                angle: tolerance.angle,
+            })
+            .map_err(kernel_err("tessellate"))?;
+        #[allow(clippy::cast_possible_truncation)] // display normals: f32 is plenty
+        let normals = mesh
+            .normals
+            .iter()
+            .map(|n| [n.x as f32, n.y as f32, n.z as f32])
+            .collect();
+        let edges = mesh
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !mesh.seams.get(*i).copied().unwrap_or(false))
+            .map(|(_, line)| line.iter().map(|p| [p.x, p.y, p.z]).collect())
+            .collect();
+        let out = FacetMesh {
+            positions: mesh.positions.iter().map(|p| [p.x, p.y, p.z]).collect(),
+            normals,
+            triangles: mesh.triangles.clone(),
+            tri_face: mesh.tri_face.clone(),
+            edges,
+        };
+        out.validate()?;
+        Ok(out)
     }
 
     fn release(&self, shape: ShapeHandle) {

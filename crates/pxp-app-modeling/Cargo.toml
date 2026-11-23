@@ -18,3 +18,5 @@ pxp-doc = { workspace = true }
 pxp-kernel = { workspace = true }
 pxp-math = { workspace = true }
 pxp-units = { workspace = true }
+pxp-format = { workspace = true }
+pxp-compute = { workspace = true }

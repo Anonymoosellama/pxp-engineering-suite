@@ -201,6 +201,13 @@ pub struct Opened {
     pub recovery: Option<RecoverySummary>,
     /// How the schema compared.
     pub schema: SchemaStatus,
+    /// A complete autosaved copy of unsaved work made on top of exactly
+    /// this save (`<part>.pxp.autosave`). The recovery journal, which holds
+    /// every committed transaction, comes first; offer the autosave when the
+    /// journal has nothing (it was lost or damaged) or the user declines it,
+    /// then call [`PartFile::autosaved_document`] or
+    /// [`PartFile::discard_autosave`].
+    pub autosave: Option<PathBuf>,
 }
 
 /// What a save did.
@@ -365,6 +372,8 @@ impl PartFile {
         if let Some(j) = &mut self.journal {
             j.reset(&token)?;
         }
+        // Everything is saved: an autosave of earlier unsaved work is stale.
+        self.discard_autosave()?;
         let bytes = std::fs::metadata(&self.path)
             .map_err(io("read size of", &self.path))?
             .len();
@@ -373,6 +382,52 @@ impl PartFile {
             bytes,
             backups,
         })
+    }
+
+    /// Writes a complete copy of `doc` to `<part>.pxp.autosave`, atomically,
+    /// tagged with this file's save token so a later open knows it extends
+    /// exactly this save. The part file, its lock and its journal are not
+    /// touched. A save or a clean close removes the autosave.
+    ///
+    /// # Errors
+    /// [`FormatError::ReadOnly`] for a read-only file; I/O or SQLite errors.
+    pub fn autosave(&self, doc: &Document) -> Result<PathBuf, FormatError> {
+        self.writable()?;
+        let target = sidecar(&self.path, ".autosave");
+        let temp = sidecar(&self.path, &format!(".autosave-tmp-{}", std::process::id()));
+        write_file(&temp, self.meta, self.token, &doc.snapshot())?;
+        pxp_platform::replace_file(&temp, &target)?;
+        Ok(target)
+    }
+
+    /// The document as autosaved (see [`Opened::autosave`]).
+    ///
+    /// # Errors
+    /// [`FormatError::Corrupt`] if there is no autosave for this save, or
+    /// the errors of reading a part file.
+    pub fn autosaved_document(&self) -> Result<Document, FormatError> {
+        let path = sidecar(&self.path, ".autosave");
+        let (_, base, objects, _) = read_file(&path, &[])?;
+        if base != self.token {
+            return Err(FormatError::Corrupt(
+                "the autosave belongs to a different save of this part".into(),
+            ));
+        }
+        Document::from_objects(objects.into_values(), Box::new(UuidV7Source::new()))
+            .map_err(FormatError::InvalidContent)
+    }
+
+    /// Deletes this part's autosave, if any.
+    ///
+    /// # Errors
+    /// I/O errors deleting it.
+    pub fn discard_autosave(&self) -> Result<(), FormatError> {
+        let path = sidecar(&self.path, ".autosave");
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(io("delete autosave", &path)(e)),
+        }
     }
 
     /// Saves to a new path and continues working there ("Save As").
@@ -430,6 +485,8 @@ impl PartFile {
             && journal.summary()?.is_none()
         {
             journal.remove()?;
+            // Nothing unsaved: an autosave can only be stale.
+            self.discard_autosave()?;
         }
         Ok(())
     }
@@ -649,6 +706,20 @@ fn open_with(
         };
         (Some(journal), recovery)
     };
+    // An autosave counts only if it was made on top of this exact save
+    // (its token is the part's); one left by another save is stale.
+    let autosave_path = sidecar(path, ".autosave");
+    let autosave = if read_only.is_none() && autosave_path.exists() {
+        match read_file(&autosave_path, migrations) {
+            Ok((_, base, _, _)) if base == token => Some(autosave_path),
+            _ => {
+                let _ = std::fs::remove_file(&autosave_path);
+                None
+            }
+        }
+    } else {
+        None
+    };
     Ok(Opened {
         file: PartFile {
             path: path.to_path_buf(),
@@ -661,7 +732,62 @@ fn open_with(
         document,
         recovery,
         schema,
+        autosave,
     })
+}
+
+/// Writes an autosave copy of the open part when it is due: the document
+/// changed since the last save or autosave, and `interval` has passed since
+/// the last autosave. The application calls [`Autosaver::tick`] from its
+/// idle loop and [`Autosaver::saved`] after every save.
+///
+/// The recovery journal already keeps every committed transaction; the
+/// autosave is a second, independent copy for when the journal is lost or
+/// damaged (a full disk, a deleted sidecar), the way NX autosaves parts.
+#[derive(Debug, Clone)]
+pub struct Autosaver {
+    interval: Duration,
+    generation: u64,
+    last: std::time::Instant,
+}
+
+impl Autosaver {
+    /// Starts tracking a document at `generation` (just opened or saved).
+    #[must_use]
+    pub fn new(interval: Duration, generation: u64, now: std::time::Instant) -> Self {
+        Self {
+            interval,
+            generation,
+            last: now,
+        }
+    }
+
+    /// Records a save: nothing is unsaved at `generation`.
+    pub fn saved(&mut self, generation: u64, now: std::time::Instant) {
+        self.generation = generation;
+        self.last = now;
+    }
+
+    /// Autosaves if due; returns the autosave's path when it wrote one.
+    ///
+    /// # Errors
+    /// As [`PartFile::autosave`].
+    pub fn tick(
+        &mut self,
+        file: &PartFile,
+        doc: &Document,
+        now: std::time::Instant,
+    ) -> Result<Option<PathBuf>, FormatError> {
+        if doc.generation() == self.generation
+            || now.saturating_duration_since(self.last) < self.interval
+        {
+            return Ok(None);
+        }
+        let path = file.autosave(doc)?;
+        self.generation = doc.generation();
+        self.last = now;
+        Ok(Some(path))
+    }
 }
 
 #[cfg(test)]

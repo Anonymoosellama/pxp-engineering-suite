@@ -16,6 +16,12 @@ workspace = true
 pxp-units = { workspace = true }
 pxp-diag = { workspace = true }
 pxp-compute = { workspace = true }
+imbl = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
+
+[[bench]]
+name = "doc"
+harness = false

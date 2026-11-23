@@ -2,14 +2,16 @@
 
 The agent keeps this file true at all times; the user confirms gate outcomes.
 
-Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
-(private). CI: `.github/workflows/ci.yml`, runs on every push.
+Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>.
+CI: `.github/workflows/ci.yml`, runs on every push. Session 3's work is on
+branch `stage-0-complete` (pushed 2026-11-22; pull request into `main` not
+yet opened).
 
 ## Gates
 
 | Stage | Scope | State |
 | --- | --- | --- |
-| 0 | Foundations | **In progress** (sessions 1-2) |
+| 0 | Foundations | **Complete, at the gate** (sessions 1-3). Verification packet: `docs/verification/stage-0.md`. CI on branch `stage-0-complete`: **all 20 jobs green** at `bf0787f` (run 45067857126) on the five build targets (see session 3, part 3). Waiting for "Stage 0 approved" |
 | 1 | Modeling (CAD, assemblies) | Not started; gated on "Stage 0 approved" |
 | 2 | Drafting | Not started |
 | 3 | Manufacturing core | Not started |
@@ -24,12 +26,114 @@ Repository: <https://github.com/Anonymoosellama/pxp-engineering-suite>
 | 0B | Foundation crates: pxp-units, pxp-math (pxp-diag, pxp-platform, pxp-compute skeletons) | Session 1 |
 | 0C | Document core pxp-doc: object store, typed unit-aware properties, expressions, dependency graph, recompute scheduler, transactions, undo/redo with memory cap, change bus, snapshots | Session 1 |
 | 0D | Contracts: pxp-kernel trait, OpResult and TopoHistory, KernelHost; Application trait and command registry; every application registered with greyed "Planned for Stage N" commands | Session 1 |
-| 0E | pxp-format: SQLite .pxp new/open/save/save as, migrations, recovery journal, backups, advisory lock, fuzz target | **Done, session 2** |
-| 0F | Kernel bake-off harness and corpus; SolidCraft backend in-process; OCCT in the worker process | **Native half done, session 2** (harness, 67-case corpus, SolidCraft backend measured). OCCT worker, NIST STEP corpus, 200-part target: session 3 |
-| 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | **Done headless, session 2** (CLI and Modeling recompute). WCS and the Block dialog arrive with the shell (0H) |
-| 0H | ADR-0002 UI prototypes (egui+egui_dock vs Slint), NX-style shell, wgpu viewer | Session 3 (crates.io now reachable) |
-| 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | CLI part commands exist (session 2); MCP and journaling in session 3 |
-| 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | Later |
+| 0E | pxp-format: SQLite .pxp new/open/save/save as, migrations, recovery journal, backups, advisory lock, fuzz target | **Done, session 2**; autosave added session 3 |
+| 0F | Kernel bake-off harness and corpus; SolidCraft backend in-process; OCCT in the worker process | **Done, session 3**: 200 parts (161 primitive and boolean cases + 39 NIST STEP files) on both kernels; recommendation OCCT primary, SolidCraft oracle (ADR-0004) |
+| 0G | Primitives (block, cylinder, cone, sphere), datum CSYS and WCS through the kernel trait | **Done**: headless (session 2) and in the shell with dialogs, Specify Point and the WCS display (session 3) |
+| 0H | ADR-0002 UI prototypes, NX-style shell, wgpu viewer | **Done, session 3**: egui + egui_dock chosen over iced (Slint excluded by licence); `pxp` shell and `pxp-render` viewer |
+| 0I | pxp-cli MCP server, journaling, record and replay with geometry-hash comparison | **Done, session 3** |
+| 0J | Crash reporter, autosave, packaging, performance budgets, fuzzing, verification packet | **Done, session 3**: packaging green in CI since 2026-11-22; long fuzzing nightly, which runs from `main` only |
+
+## Session 3, part 3 (2026-11-22) — first CI on the pushed branch
+
+The user attached the repository with push access; `stage-0-complete` was
+pushed at `b4d62b7` and CI ran on it for the first time. Fixes since, all
+on that branch:
+
+| Run | Commit | Result | Action |
+| --- | --- | --- | --- |
+| 45053831919 | `b4d62b7` | 17 / 20 jobs green. `clippy + test + doc` failed on windows-2025 and windows-11-arm: every GPU test panicked creating the `silhouettes` pipeline (FXC X3507, "not all control paths return a value"); `determinism` skipped | `9cd0f3b`: `sil_fs` discards inside an `if` and returns last; `tests/shader_source.rs` checks that shape on every OS. The desktop viewport would have panicked the same way on Windows wherever wgpu picks Direct3D 12 |
+| 45059312172 | `9cd0f3b` | windows-2025 green. windows-11-arm: the GPU test process crashed (0xc0000005, access violation); re-run (attempt 2) crashed the same way | `7bdcbf5`, `d3da4f7`: step markers and wgpu's log in the GPU tests, a diagnostic step after a failed test step |
+| 45063743207 | `d8fee62` | **User decision: Windows ARM64 out of the build for now.** The `windows-arm-gpu-diagnostics` job (not part of the build) showed the six GPU tests pass one at a time with validation on and off, and crash only in parallel, with four Direct3D 12 devices rendering at once on WARP | `07e2c37`: the GPU tests take turns on the device (one device alive at a time, as in the product) |
+| 45064274547 | `07e2c37` | 19 / 20 jobs green: `clippy + test + doc` on all five build targets, `determinism` (cross-OS geometry hashes), the OCCT jobs and their cross-OS hashes, benchmarks, packaging on Linux, Windows and macOS x86_64, and the Windows ARM64 diagnostics job in all three modes, parallel included. One failure: `package (macos-15)`, hdiutil "No space left on device" on the image's own volume (same step green on the two runs before) | The macOS package step gives hdiutil an explicit `-size` (bundle plus 20 % and 20 MB) |
+| 45067857126 | `bf0787f` | **20 / 20 jobs green**, including `package (macos-15)` (119 MB bundle, 164 MB image) and the Windows ARM64 diagnostics job | None |
+
+**Windows ARM64.** Out of the `test` matrix and the nightly NIST matrix
+(it was never in `package` or `occt`); see "Decisions taken" and
+"Temporary deviations". The crash cause is fixed in the tests, so it can
+return to the matrix whenever the user wants; the non-blocking
+`windows-arm-gpu-diagnostics` job stays until then or until the user
+drops it.
+
+## Session 3, part 2 (2026-11-21 to 22) — finish Stage 0
+
+**Outcome:** all six tasks done; Stage 0 is at its gate. Commits are local
+(push refused) and handed over as a bundle. Results are in the
+verification packet, `docs/verification/stage-0.md`.
+
+The user asked to continue until Stage 0 is complete. Push access was
+refused twice, so every slice below is a local commit handed over as a git
+bundle; nothing counts as CI-green until the user pushes it. Environment:
+apt works (Mesa's lavapipe gives wgpu a software Vulkan device, so the UI
+and viewer can be rendered and checked offscreen), pip works (OCCT 7.8.1 as
+`cadquery-ocp` wheels), crates.io works; 2 vCPU, 7 GB, no display, no GPU,
+no nightly toolchain.
+
+**Tasks, in order**
+
+1. **0F corpus to at least 200 parts:** generated synthetic families with
+   analytic answers (arrays, grids, near-tangent and near-coincident
+   sweeps), on top of the 67 primitive cases and 39 NIST files.
+2. **0F OCCT half:** `pxp-kernel-occt` as a worker-process client of a
+   versioned request/response protocol (restart after a crash, timeouts);
+   the bake-off worker runs OCCT 7.8.1 through its Python bindings (OCP).
+   Same corpora as SolidCraft; ADR-0004 recommendation from the evidence.
+3. **0I:** MCP server (`pxp-cli mcp`, JSON-RPC over stdio) running the same
+   commands headless; session journaling with record, replay and
+   geometry-hash comparison; journals as regression tests.
+4. **0J:** local crash reporter (no telemetry), autosave, criterion
+   benchmarks with the Stage 0 budgets, a persistent map for `DocState`.
+5. **0H:** ADR-0002 prototypes (egui + egui_dock versus Slint: ribbon and
+   navigator), decision; the NX-style shell (`pxp-ui`, `pxp-app`) and the
+   wgpu viewer (`pxp-render`: NX mouse grammar, GPU picking, edges and
+   silhouettes, section plane, view triad, standard and named views,
+   software fallback); Block dialog; WCS. Checked by offscreen screenshots.
+6. **CI and hand-over:** packaging jobs, nightly long fuzzing, the
+   verification packet.
+
+**Risks**
+
+- Without push nothing is CI-confirmed: packaging, the six-target test
+  matrix and cross-OS hashes stay unverified until the user pushes.
+- No GPU here: the 5-million-triangle frame-rate check can only be run on
+  the user's machine (a benchmark command is provided for it).
+- No nightly toolchain here: fuzzing CPU-hours come from the nightly CI job.
+- The OCP worker is a measurement backend: shipping OCCT would need a C++
+  worker speaking the same protocol (recorded in ADR-0004).
+
+## Session 3, part 1 (2026-11-21) — Stage 0, 0F: NIST STEP stress test
+
+The user asked for the NIST test model stress test and enabled `nist.gov`.
+Environment check: the shell's egress proxy still refuses `nist.gov` (403,
+"no rule allows this host"; the web-fetch tool can read its pages but not
+download archives); GitHub and crates.io work; 2 vCPU, 7 GB. Push access to
+this repository was refused for this session, so the work is a local branch
+handed over as a patch series.
+
+**Tasks**
+
+1. Get the NIST MBE PMI STEP models from a source the sandbox can reach,
+   with provenance: NIST's own repository `usnistgov/SFA` ships the same
+   package; pin two releases by commit and SHA-256
+   (`tools/fetch_nist_step.py`); check against the user's own `nist.gov`
+   download.
+2. STEP import through the kernel: `GeometryKernel::import_step`,
+   `export_step`, `bounding_box`, `check_validity` (defaults
+   `Unsupported`); SolidCraft's own reader and writer in
+   `pxp-kernel-native`.
+3. A STEP-file stress harness whose grades never come from the kernel: the
+   files' own geometric validation properties and declared bodies (read by
+   an independent Part 21 reader), round trips, and inclusion-exclusion
+   identities of booleans on the imported parts; `pxp-cli stepstress`.
+4. Run all 39 files twice; report; nightly workflow so the corpus runs on
+   every OS; one NIST file in the per-push tests.
+
+**Risks**
+
+- Grading real files against references they state about themselves: the
+  files have defects of their own (NIST warns), so every reference the
+  reader cannot trust is reported, not graded.
+- The NIST files may hit translator paths the kernel lacks (tessellated
+  AP242); those are findings, not harness failures.
 
 ## Session 2 plan (2026-11-21) — Stage 0, sub-stages 0E, 0F (native half), 0G
 
@@ -92,6 +196,54 @@ in CI), the NIST STEP corpus (`nist.gov` must be added to the allowed domains),
 - No crates.io access in this session: only std-only crates can be built. thiserror, rusqlite, rayon, egui, wgpu, proptest and criterion are unavailable, so error types are written by hand and parallelism uses `std::thread::scope`. Each substitution is listed under "Temporary deviations" below.
 - CI has never run: the workflow is written but cannot be exercised from this sandbox, so "CI green on all three OSes" is not yet met for anything.
 - Snapshots copy the object map (Arc-shared objects, O(n) pointer copies per transaction). Acceptable for Stage 0 scale; replace with a persistent map once crates are available (ADR-0006).
+
+## Done (session 3, part 2, 2026-11-21 to 22)
+
+Measured locally on Linux x86_64 (2 vCPU, 7 GB, no GPU; Mesa lavapipe for
+wgpu) with the stable toolchain (Rust 1.97.0). **Not confirmed by CI**:
+push refused.
+
+| Item | Evidence |
+| --- | --- |
+| 0F corpus: 95 generated cases in 15 families with closed-form answers; 200 parts in all | `bakeoff::families`; `pxp-cli bakeoff --corpus generated` |
+| 0F OCCT backend: `pxp-kernel-occt` client (protocol 1, JSON lines, restart after a crash, timeouts, generation-tagged handles) and the OCP worker (primitives, booleans with history, STEP, BRep, check, display meshes, adaptive mass integration) | 6 conformance + 3 unit tests |
+| 0F comparison on 200 parts, both kernels; recommendation OCCT primary, SolidCraft oracle | `docs/reports/kernel-bakeoff-2026-11-21-comparison.md`; ADR-0004 decision with conditions |
+| 0I MCP server (`pxp-cli mcp`, 12 tools) and journals (record, replay, hash comparison; committed journal replayed by tests) | `crates/pxp-cli/tests/journal_mcp.rs` |
+| 0J persistent `DocState` (imbl 7), `Document::clear_undo` | ADR-0006; `pxp-doc` tests |
+| 0J criterion benchmarks with budgets and a 10 % same-runner regression gate | `docs/design/performance-budgets.md`; all 8 within budget |
+| 0J crash reporter, autosave, codec soak (1.47 × 10⁹ inputs, 10 min, no failure), nightly long fuzzing and full bake-off, packaging jobs | `pxp-diag::crash`, `pxp-format`, workflows |
+| 0H ADR-0002 prototypes and decision (egui + egui_dock) | `prototypes/`, ADR-0002 |
+| 0H `pxp-render` viewer, `pxp-ui` shell, `pxp` binary, part session, block origin | GPU tests (lavapipe), scripted screenshots, `pxp bench-orbit` (2.1 fps at 5 M triangles on llvmpipe) |
+| Licences: winit stack registered (LGPL-3.0 conveyance of `pxp`), RUSTSEC-2026-0292 fixed by imbl 7 | ADR-0001, `deny.toml`; `cargo deny check` clean |
+| Docs: user guide (one page per command), developer guide, verification packet with sample parts | `docs/user-guide/`, `docs/developer-guide.md`, `docs/verification/` |
+
+Workspace total: **249 tests passing, 0 failing** (1 opt-in ignored);
+clippy (pedantic, `-D warnings`), rustdoc (`-D warnings`),
+`cargo fmt --check`, `tools/check_repo.py` and `cargo deny check` clean.
+
+## Done (session 3, part 1, 2026-11-21)
+
+Measured locally on Linux x86_64 (2 vCPU, 7 GB) with the installed stable
+toolchain, which is Rust 1.97.0 (rustup cannot fetch the pinned toolchain by
+name here). **Not yet confirmed by CI**:
+push access was refused, so nothing from this session has run on the six
+CI targets.
+
+| Item | Evidence |
+| --- | --- |
+| NIST corpus: 39 STEP files (28 current + 11 from the January 2026 release), NIST's own package from `usnistgov/SFA` at commits `1236017` and `c218911`, SHA-256 pinned; byte-identical to the user's `nist.gov` download (21 / 21 and 32 / 32 files compared) | `tools/fetch_nist_step.py` (tested: download and local zips) |
+| `pxp-kernel`: `import_step`, `export_step` (no time stamp: deterministic text), exact `bounding_box`, `check_validity`; `StepImport`, `ImportedShape` | defaults refuse; design note `docs/design/kernel-contract.md` ("STEP translation through the kernel") |
+| `pxp-kernel-native`: SolidCraft's STEP reader (uncached path) and writer, SMLib's exact box, SMLib's full check | 3 new conformance tests (STEP round trip of a drilled block against a hand calculation, garbage refused without panic, exact cylinder box): 15 conformance tests |
+| Bake-off: `bakeoff::p21` (independent Part 21 reader of validation properties and declared bodies: solid vs sheet aspects, unit resolution incl. inch and `AREA_UNIT`/`VOLUME_UNIT`, unit-label mismatch detection, zero and swapped-argument quirks) and `bakeoff::step` (7 checks per file) | 6 unit tests + 1 opt-in test over a STEP directory |
+| `pxp-cli stepstress FILE\|DIR… [--repeat N] [--format summary\|markdown\|tsv\|details] [--details FILE]` | integration test `crates/pxp-cli/tests/nist_step.rs` on NIST FTC-11 (public domain, notice in `tests/data/NIST-NOTICE.md`) |
+| **NIST stress test run** (39 files × 2 runs, 56.5 min): **24 / 39 pass every check**; 37 / 37 solids import closed; 16 / 16 files with stated properties agree (median 1e-7, worst 3.7e-6); 13 / 37 solids fail SMLib's own check (tolerance gaps) and 5 of them refuse every boolean; 1 STEP round trip fails (an invalid solid comes back open); both tessellated files unsupported; 39 / 39 deterministic; 0 incomplete histories, 0 crashes | `docs/reports/kernel-nist-step-stress-2026-11-21.md` (+ `.tsv` with the Linux x86_64 hashes); ADR-0004 measurements |
+| Nightly workflow: the NIST corpus on all six targets with the cross-OS hash comparison (`tools/ci/known-nist-differences.txt`, empty) | `.github/workflows/nightly.yml` (**untested**: needs a push) |
+
+Workspace total: **191 tests passing, 0 failing** (1 opt-in test ignored);
+clippy (pedantic, `-D warnings`) and rustdoc (`-D warnings`) clean;
+`tools/check_repo.py` 0 problems; `cargo fmt --check` clean. Tests ran with
+the optimised `kb` profile (a debug SolidCore build needs about 6 GB).
+`cargo deny` was not run locally (no dependency changed).
 
 ## Done (session 2, 2026-11-21)
 
@@ -175,66 +327,75 @@ clean.
 
 ## In progress
 
-- Nothing half-finished in the tree. Stage 0 overall: the OCCT half of
-  0F, 0H, 0I and 0J remain (table above); the Stage 0 gate is not
-  reached.
+- Nothing. Stage 0 is complete and waiting at the gate. Stage 1 starts only
+  after "Stage 0 approved".
 
 ## Blocked
 
-- **NIST MBE PMI STEP models** for the bake-off corpus: `nist.gov` is not
-  reachable from the agent's sandbox. Fix: add `nist.gov` to the allowed
-  domains (Settings → Capabilities), then start a new chat. They also need
-  STEP import, which is not in the kernel trait yet.
-- **OCCT backend**: building OCCT from source is impractical on the
-  sandbox's 2 cores; session 3 tries prebuilt binaries or building in CI.
+- Nightly jobs (long fuzzing, full bake-off, NIST on every OS) run only
+  from the default branch, so they start once `stage-0-complete` is merged
+  into `main`.
+- `nist.gov` is refused by the shell's egress proxy. Not blocking: NIST's
+  own GitHub repository serves the same files, pinned by commit and
+  checksum.
+- No nightly toolchain or `llvm-tools` in the sandbox, so no cargo-fuzz
+  runs or line coverage here (CI does both).
 
 ## Decisions needed from the user
 
-- None blocking. For information: because `pxp-cli` now links the
-  SolidCraft backend, its binaries are conveyed under LGPL-3.0 (ADR-0001,
-  as planned for session 2). This is reversed if OCCT wins the bake-off and
-  the native backend leaves shipped binaries.
-- Optional, before Stage 4: whether user-written post processors that
-  embed library layers should get an explicit licence exception (under LGPL
-  they may stay private for in-shop use either way).
+See the verification packet, section 5:
+
+- D1 STEP round-trip tolerance for imported freeform solids.
+- D2 Reference GPU and frame-rate budget.
+- D3 Code-signing certificates.
+- D4 Fuzzing CPU-hours.
+- D5 Accept ADR-0002 and ADR-0004.
+- D6 Done 2026-11-22: push access granted, branch `stage-0-complete`
+  pushed. Remaining: open the pull request into `main` (the session's
+  GitHub CLI token is invalid, so the agent cannot open it).
+- D7 Windows ARM64: bring it back into the build (the crash cause is
+  fixed), or keep it out and drop the diagnostics job.
+
+Optional, before Stage 4: whether user-written post processors that embed
+library layers should get an explicit licence exception.
 
 ## Decisions taken
 
 - ADR-0001: LGPL-2.1-or-later (user, 2026-11-20).
+- Windows ARM64 out of the build for now (user, 2026-11-22): removed from
+  the CI `test` matrix and the nightly NIST matrix; a separate,
+  non-blocking diagnostics job runs the GPU tests there.
 - ADR-0006: document core design and `Application` trait additions (agent).
 - ADR-0007: coherent mm-t-s internal units; NX degree convention for bare
   numbers in trig (agent).
-- ADR-0002 to ADR-0005: written as Proposed with evaluation plans; decisions
-  wait for prototypes and measurements.
+- ADR-0002 (agent, from prototypes, pending gate approval): egui +
+  egui_dock on wgpu. ADR-0004 (agent, from the bake-off, pending gate
+  approval): OCCT primary in its worker, SolidCraft as oracle, with
+  conditions. ADR-0003 (SQLite) implemented. ADR-0005 (WASM plugins) is
+  Stage 1+.
+- Session 3 (agent): imbl 7 persistent maps for `DocState`; OCCT adaptive
+  mass integration; the desktop binary's winit stack registered as
+  Apache-2.0-only exceptions (LGPL-3.0 conveyance, ADR-0001); duplicate
+  GUI-ecosystem crate versions skipped in `deny.toml` with reasons.
 - Session 2 (agent): SolidCraft's kernel as the native bake-off candidate
   (git dependency pinned to one commit); face counts compared as merged
   counts; volume and area hashed to 9 significant digits; feature geometry
   stored as the object payload in a backend-tagged envelope; derived edge
   and vertex history records (documented in the kernel contract).
 
-## Proposed plan for session 3 (Stage 0)
+## Proposed plan for Stage 1 (not started)
 
-1. OCCT half of 0F: `pxp-kernel-occt` in a worker process (versioned
-   protocol, restart, transaction replay), measured on the same corpus;
-   decide ADR-0004.
-2. Find why case 3460's hash differs on macOS (fingerprints now include
-   centroids; next, per-part sub-hashes of coordinates and entity order),
-   then fix the hash or report it to SolidCraft, and empty
-   `tools/ci/known-cross-os-differences.txt`.
-3. Grow the corpus towards 200 parts: NIST STEP models once `nist.gov` is
-   reachable and STEP import exists; more synthetic stress cases; slow cases
-   in a nightly workflow.
-4. 0H: ADR-0002 UI prototypes, the NX-style shell, the wgpu viewer, the
-   Block dialog and the WCS.
-5. 0I: MCP server and session journaling with geometry-hash comparison.
-6. Persistent map for `DocState`; criterion benchmarks with the Stage 0
-   budgets (0J).
+The verification packet, section 8: native OCCT worker and kernel switch;
+sketcher; features with persistent naming; assemblies; STEP import and
+export; shell follow-ups (exact snapping, edge picking, OS file dialogs,
+signed installers, coverage in CI).
 
 ## Temporary deviations from the master prompt
 
 | Rule | Deviation | Why | Removed when |
 | --- | --- | --- | --- |
 | Typed errors via thiserror | Session 1 crates keep hand-written `Display` + `Error` impls; session 2 crates (`pxp-format`) use thiserror | Session 1 had no crates.io | Optional: equivalent; convert when those crates are next touched |
-| criterion benchmarks | None yet | Budgets arrive with 0J | 0J |
-| Kernel corpus of at least 200 parts | 67 cases | Stage 1 operations, STEP import and `nist.gov` access are missing | Session 3 onwards |
+| Fuzzers' CPU-hours | 10-minute stable soak here; cargo-fuzz CPU-hours only in the nightly CI job | No nightly toolchain in the sandbox | First nightly run after a push |
+| Signed builds for three OSes | Unsigned package jobs (Linux .tar.gz and .deb, Windows .zip, macOS .dmg on arm64 and x86_64), run in CI since 2026-11-22 | Certificates needed (D3) | D3 |
+| Targets include Windows 10/11 ARM64 | Windows ARM64 is not built, tested or packaged | User decision 2026-11-22, after a GPU-test crash on that runner (cause since fixed) | The user brings it back (D7) |
 | Toolchain 1.97.0 pinned | Local checks run on the sandbox's stable toolchain; CI uses the pinned one | rustup cannot download 1.97.0 in the sandbox | Sandbox network allows static.rust-lang.org |

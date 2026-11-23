@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# NIST STEP files whose stress-test hash is known to differ between CI
+# targets. The `determinism` job in .github/workflows/nightly.yml ignores the
+# listed (file, target) pairs, reports them as warnings, and fails on any
+# other difference. Same rules as known-cross-os-differences.txt: each entry
+# is a kernel finding with evidence, removed as soon as the hashes agree.
+#
+# Format: <file id> <target>   # evidence
+#
+# (none yet: the nightly job has not run)

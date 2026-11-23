@@ -2,15 +2,20 @@
 
 - **Status:** Accepted (implemented in session 1, `crates/pxp-doc`,
   `crates/pxp-appkit`)
-- **Date:** 2026-11-20
+- **Date:** 2026-11-20; decision 1 revised 2026-11-21 (persistent maps)
 
 ## Decisions
 
-1. **State representation.** A `DocState` is a `BTreeMap<ObjectId,
-   Arc<Object>>` plus two derived indexes (reverse dependencies, expression
-   names). A transaction clones the state (pointer copies only) and mutates
-   the clone. Commit swaps it in; failure or panic drops it. Rollback is
-   therefore exact by construction, not by replaying inverse operations.
+1. **State representation.** A `DocState` is a persistent ordered map
+   `imbl::OrdMap<ObjectId, Arc<Object>>` plus two derived indexes (reverse
+   dependencies as `OrdMap<ObjectId, OrdSet<ObjectId>>`, expression names
+   as `OrdMap<String, ObjectId>`). A transaction clones the state (O(1):
+   the maps share structure) and mutates the clone (O(log n) per changed
+   object, copying only the touched tree nodes). Commit swaps it in;
+   failure or panic drops it. Rollback is therefore exact by construction,
+   not by replaying inverse operations. Iteration order is the key order,
+   exactly as with the `BTreeMap` it replaced, so saved files and hashes
+   are unchanged.
 2. **Undo entries are object deltas.** Each entry stores the `Arc` before and
    after of only the objects the transaction touched. Memory is proportional
    to the change, and the history is capped in estimated bytes (default
@@ -40,15 +45,23 @@
 - **Inverse-operation logs for rollback:** more code paths that must be
   exactly right, and a panic mid-operation can leave the log inconsistent.
 - **Full-state snapshots for undo:** O(model) memory per step.
-- **A persistent hash map now:** no crates.io access. `im` or `rpds`
-  (MPL-2.0, compatible with ADR-0001) are the planned replacement.
+- **`BTreeMap` with whole-map clones** (session 1, when crates.io was not
+  reachable): O(n) pointer copies per transaction and per recompute level.
+- **`im` and `rpds`:** `im` is unmaintained (last release 2022; `imbl` is
+  its maintained fork with the same API). `rpds` would work too; `imbl`
+  was chosen for its ordered map with `Arc` sharing and a larger user base.
+  Licence MPL-2.0: file-level copyleft, compatible with ADR-0001 and
+  allowed in `deny.toml`.
+- **A hash map (`imbl::HashMap`):** iteration order would no longer be
+  deterministic by key, which the file writer and geometry hashes rely on.
 
 ## Known costs and follow-ups
 
-- Cloning `DocState` is O(n) pointer copies per transaction and per recompute
-  level: about 1 ms per 100 000 objects. Replace the map with a persistent
-  one when crates are available, measured against the Stage 0 performance
-  budgets (0J). The public API does not change.
+- Resolved 2026-11-21: cloning `DocState` was O(n) pointer copies per
+  transaction (about 1 ms per 100 000 objects). With `imbl` it is O(1);
+  the benchmark `doc/edit-one-of-100k` (`crates/pxp-doc/benches/doc.rs`)
+  holds it to the budget in `docs/design/performance-budgets.md`. The
+  public API did not change.
 - Parallel recompute uses `std::thread::scope`; swap to rayon in
   `pxp-compute` when crates are available.
 - Persistent naming (building stable names from `TopoHistory`) is not

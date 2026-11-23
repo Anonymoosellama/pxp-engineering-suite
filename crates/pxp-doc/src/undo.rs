@@ -149,6 +149,13 @@ impl UndoStack {
         self.enforce_cap();
     }
 
+    /// Forgets every undo and redo step.
+    pub(crate) fn clear(&mut self) {
+        self.done.clear();
+        self.undone.clear();
+        self.used = 0;
+    }
+
     pub(crate) fn set_cap(&mut self, bytes: usize) {
         self.cap = bytes;
         self.enforce_cap();

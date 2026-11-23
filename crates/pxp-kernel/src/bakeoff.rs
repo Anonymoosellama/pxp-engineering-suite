@@ -11,15 +11,25 @@
 //!   contacts, tiny and near-tolerance features, voids, empty results,
 //!   refusals), each with its expected answer worked out in its
 //!   description.
+//! - [`generated_cases`]: families that sweep one parameter (count, offset,
+//!   angle, scale) through constructions with closed-form answers.
 //! - [`solidcraft_cases`]: SolidCraft's kernel regression cases that can be
 //!   expressed with primitives and booleans, converted from SolidCraft's
 //!   `tests/kernel-cases` by `tools/import_solidcraft_cases.py` (MIT; the
 //!   generated file carries the notice).
 //!
-//! Only primitives and booleans exist in Stage 0, so the corpus measures
-//! boolean robustness. Blend success rates and STEP round-trip fidelity
-//! (also bake-off criteria) need the blend and STEP operations of Stage 1;
-//! the public NIST STEP models need network access this session lacks.
+//! - [`run_step_file`]: real parts from STEP files (written for the NIST
+//!   MBE PMI test models), read by the backend's own translator
+//!   ([`crate::GeometryKernel::import_step`]) and graded against the
+//!   file's own geometric validation properties ([`validation_properties`])
+//!   and against invariants: round trips and inclusion-exclusion identities
+//!   of booleans on the imported part. The files are not compiled in;
+//!   `pxp-cli stepstress` reads them from disk (`tools/fetch_nist_step.py`
+//!   downloads the NIST set with checksums).
+//!
+//! The primitive corpus measures boolean robustness on exact answers; the
+//! STEP corpus measures translator fidelity and boolean robustness on real
+//! geometry. Blend success rates need the blend operations of Stage 1.
 //!
 //! ## Grading
 //!
@@ -47,10 +57,19 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Instant;
 
+mod families;
+mod p21;
 mod solidcraft;
+mod step;
 mod synthetic;
 
+pub use families::cases as generated_cases;
+pub use p21::{Declared, ValidationProperties, validation_properties};
 pub use solidcraft::cases as solidcraft_cases;
+pub use step::{
+    CHECKS as STEP_CHECKS, Check as StepCheck, IDENTITY_TOLERANCE, REFERENCE_TOLERANCE,
+    StepOutcome, run_step_file, to_markdown as step_markdown,
+};
 pub use synthetic::cases as synthetic_cases;
 
 /// Resolution used for the geometry hashes the harness prints.
@@ -550,6 +569,7 @@ impl Report {
         for (label, prefix) in [
             ("Synthetic stress", "syn/"),
             ("SolidCraft reference", "solidcraft/"),
+            ("Generated families", "gen/"),
             ("All", ""),
         ] {
             let (p, f, e, d) = self.tally(prefix);

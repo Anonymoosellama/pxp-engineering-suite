@@ -18,3 +18,10 @@ pxp-math = { workspace = true }
 pxp-units = { workspace = true }
 solidcraft-kernel = { workspace = true }
 solidcore-record = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "kernel"
+harness = false

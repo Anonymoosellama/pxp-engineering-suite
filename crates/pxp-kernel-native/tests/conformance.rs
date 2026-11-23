@@ -464,3 +464,148 @@ fn merged_counts_join_pieces_of_one_surface() {
         .unwrap();
     assert_eq!(h.call(|k| k.merged_counts(lens.shape)).unwrap().faces, 2);
 }
+
+/// A block with a through hole, written as STEP and read back by the
+/// backend's own translator: one closed body with the hand-calculated volume
+/// and the same merged faces (6 planes + 1 cylinder side).
+#[test]
+fn step_export_and_import_keep_volume_and_faces() {
+    let h = host();
+    let block = h.op(|k| k.block(&block_spec(40.0, 30.0, 10.0))).unwrap();
+    let hole = h
+        .op(|k| {
+            k.cylinder(&CylinderSpec {
+                base: Point3::new(20.0, 15.0, -1.0),
+                axis: UnitVec3::Z,
+                diameter: mm(10.0),
+                height: mm(12.0),
+            })
+        })
+        .unwrap();
+    let part = h
+        .op(|k| k.boolean(BooleanOp::Subtract, block.shape, hole.shape))
+        .unwrap();
+    let text = h.call(|k| k.export_step(&[part.shape])).unwrap();
+    assert!(text.starts_with("ISO-10303-21;"), "{}", &text[..40]);
+    // No time stamp: identical shapes give identical text.
+    assert_eq!(text, h.call(|k| k.export_step(&[part.shape])).unwrap());
+    let imp = h.call(|k| k.import_step(&text)).unwrap();
+    assert_eq!(imp.shapes.len(), 1, "warnings: {:?}", imp.warnings);
+    let s = &imp.shapes[0];
+    assert!(s.closed && !s.mesh);
+    assert_eq!((imp.parts, imp.closed_parts), (1, 1));
+    let expected = 40.0 * 30.0 * 10.0 - PI * 25.0 * 10.0;
+    let m = h.call(|k| k.mass_properties(s.shape)).unwrap();
+    close(m.volume.mm3(), expected, 1e-9);
+    assert_eq!(h.call(|k| k.merged_counts(s.shape)).unwrap().faces, 7);
+    assert_eq!(h.call(|k| k.body_kind(s.shape)).unwrap(), BodyKind::Solid);
+    // The kernel's own check passes the part before and after the trip.
+    assert!(h.call(|k| k.check_validity(part.shape)).unwrap().is_empty());
+    assert!(h.call(|k| k.check_validity(s.shape)).unwrap().is_empty());
+    // Reading the same text again gives the same body (determinism).
+    let again = h.call(|k| k.import_step(&text)).unwrap();
+    assert_eq!(
+        h.call(|k| k.geometry_hash(s.shape, RES)).unwrap(),
+        h.call(|k| k.geometry_hash(again.shapes[0].shape, RES))
+            .unwrap()
+    );
+}
+
+/// The translator reads untrusted text: garbage is refused, never a panic
+/// (`KernelHost::call` would turn a panic into `BackendPanicked`).
+#[test]
+fn step_import_refuses_garbage() {
+    let h = host();
+    for text in [
+        "",
+        "not a step file",
+        "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n#1=MANIFOLD_SOLID_BREP('',#2);\nENDSEC;\nEND-ISO-10303-21;\n",
+    ] {
+        match h.call(|k| k.import_step(text)) {
+            Ok(imp) => assert!(imp.shapes.is_empty() || imp.shapes.iter().all(|s| !s.closed)),
+            Err(KernelError::BackendPanicked(m)) => panic!("translator panicked: {m}"),
+            Err(_) => {}
+        }
+    }
+}
+
+/// The exact box of a cylinder reaches its radius on every side, although
+/// its only vertices (if any) lie on the seam: a vertex box would be too
+/// small.
+#[test]
+fn bounding_box_is_exact_on_curved_faces() {
+    let h = host();
+    let c = h
+        .op(|k| {
+            k.cylinder(&CylinderSpec {
+                base: Point3::new(1.0, 2.0, 3.0),
+                axis: UnitVec3::Z,
+                diameter: mm(20.0),
+                height: mm(5.0),
+            })
+        })
+        .unwrap();
+    let b = h.call(|k| k.bounding_box(c.shape)).unwrap();
+    let (lo, hi) = (b.min().unwrap(), b.max().unwrap());
+    for (got, want) in [
+        (lo.x, -9.0),
+        (lo.y, -8.0),
+        (lo.z, 3.0),
+        (hi.x, 11.0),
+        (hi.y, 12.0),
+        (hi.z, 8.0),
+    ] {
+        assert!((got - want).abs() < 1e-6, "{got} vs {want}");
+    }
+}
+
+/// Signed volume enclosed by a closed triangle mesh (divergence theorem):
+/// exact for planar faces, so a block's mesh must enclose its volume.
+fn mesh_volume(m: &pxp_kernel::FacetMesh) -> f64 {
+    m.triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| m.positions[i as usize]);
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                / 6.0
+        })
+        .sum()
+}
+
+#[test]
+fn display_meshes_are_watertight_and_tag_every_face() {
+    let h = host();
+    let block = h
+        .op(|k| k.block(&block_spec(20.0, 30.0, 10.0)))
+        .unwrap()
+        .shape;
+    let tol = pxp_kernel::MeshTolerance::display(mm(40.0));
+    let m = h.call(|k| k.tessellate(block, &tol)).unwrap();
+    m.validate().unwrap();
+    close(mesh_volume(&m), 6000.0, 1e-12);
+    let faces: std::collections::BTreeSet<u32> = m.tri_face.iter().copied().collect();
+    assert_eq!(
+        faces,
+        (0..6).collect(),
+        "every face of the block has triangles"
+    );
+    assert_eq!(m.edges.len(), 12, "a block shows its 12 edges");
+    // A cylinder's seam is not drawn: two circles and no line along it.
+    let cyl = h
+        .op(|k| {
+            k.cylinder(&CylinderSpec {
+                base: Point3::new(0.0, 0.0, 0.0),
+                axis: UnitVec3::Z,
+                diameter: mm(10.0),
+                height: mm(20.0),
+            })
+        })
+        .unwrap()
+        .shape;
+    let m = h.call(|k| k.tessellate(cyl, &tol)).unwrap();
+    assert_eq!(m.edges.len(), 2, "two circular edges, seam hidden");
+    // The chord tolerance bounds the volume error of the faceted cylinder.
+    let exact = PI * 25.0 * 20.0;
+    assert!(mesh_volume(&m) < exact && mesh_volume(&m) > exact * 0.99);
+}

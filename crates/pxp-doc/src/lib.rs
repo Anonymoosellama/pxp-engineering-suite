@@ -347,6 +347,14 @@ impl Document {
         self.undo.redo_labels()
     }
 
+    /// Forgets the undo and redo history, keeping the current state. Used
+    /// when a part is created from a template, so the template's own
+    /// construction is not an undo step (as in NX, a new part starts with
+    /// nothing to undo).
+    pub fn clear_undo(&mut self) {
+        self.undo.clear();
+    }
+
     /// Sets the undo memory cap in bytes (default
     /// [`DEFAULT_UNDO_CAP_BYTES`]). The oldest steps are dropped to fit; the
     /// newest step is always kept.

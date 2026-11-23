@@ -30,7 +30,27 @@ authors = ["PXP Engineering Suite contributors"]
 # deny.toml (ADR-0001).
 rusqlite = { version = "0.43", features = ["bundled", "backup"] }
 thiserror = "2"
+# The OCCT worker protocol (JSON lines); MIT OR Apache-2.0.
+serde_json = "1"
+# Persistent (structurally shared) maps for document snapshots, ADR-0006; MPL-2.0.
+imbl = "7"
+# Benchmarks with budgets (master prompt: tracked in CI); MIT OR Apache-2.0.
+criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
 rayon = "1.12"
+# Desktop shell (ADR-0002: egui + egui_dock on wgpu); MIT OR Apache-2.0.
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland"] }
+egui_dock = "0.22"
+# The viewport (pxp-render); the version eframe 0.37 uses, so the shell and
+# the viewport share one device. MIT OR Apache-2.0.
+wgpu = "30"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "1"
+# PNG screenshots of the viewport and shell; MIT OR Apache-2.0.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# The logging facade wgpu reports through; the GPU tests print its records
+# so a driver crash leaves wgpu's last messages in the CI log. Already in
+# the tree through wgpu. MIT OR Apache-2.0.
+log = "0.4"
 proptest = { version = "1.12", default-features = false, features = ["std"] }
 # SolidCraft's geometry kernel, built on SolidCore (ADR-0004 bake-off
 # candidate). Not published on crates.io, so a git dependency pinned to one

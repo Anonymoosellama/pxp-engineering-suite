@@ -18,6 +18,8 @@ path = "src/main.rs"
 
 [dependencies]
 pxp-units = { workspace = true }
+pxp-diag = { workspace = true }
+serde_json = { workspace = true }
 pxp-compute = { workspace = true }
 pxp-doc = { workspace = true }
 pxp-math = { workspace = true }
@@ -37,7 +39,6 @@ pxp-app-cae = { workspace = true }
 pxp-kernel-occt = { workspace = true }
 pxp-sketch = { workspace = true }
 pxp-tess = { workspace = true }
-pxp-render = { workspace = true }
 pxp-io = { workspace = true }
 pxp-io-step = { workspace = true }
 pxp-io-iges = { workspace = true }
@@ -54,4 +55,3 @@ pxp-fea = { workspace = true }
 pxp-topopt = { workspace = true }
 pxp-scan = { workspace = true }
 pxp-pointcloud = { workspace = true }
-pxp-ui = { workspace = true }

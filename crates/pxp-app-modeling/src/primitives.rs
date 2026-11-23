@@ -8,7 +8,7 @@
 //! | Kind | Properties | Dependencies |
 //! | --- | --- | --- |
 //! | `modeling.datum_csys` | `origin_x/y/z` (length), `x_axis_x/y/z`, `y_axis_x/y/z` (numbers; Y is a hint, made orthogonal) | none |
-//! | `modeling.block` | `x_length`, `y_length`, `z_length`; optional `csys` (reference to a datum CSYS) | each referenced expression (`param`), the datum (`csys`) |
+//! | `modeling.block` | `x_length`, `y_length`, `z_length`; optional `origin_x/y/z` (lengths, in the CSYS's axes; added 2026-11-21, absent means 0); optional `csys` (reference to a datum CSYS) | each referenced expression (`param`), the datum (`csys`) |
 //! | `modeling.cylinder` | `base_x/y/z`, `axis_x/y/z`, `diameter`, `height` | referenced expressions |
 //! | `modeling.cone` | `base_x/y/z`, `axis_x/y/z`, `base_diameter`, `top_diameter`, `height` | referenced expressions |
 //! | `modeling.sphere` | `center_x/y/z`, `diameter` | referenced expressions |
@@ -146,6 +146,20 @@ fn block_spec(snap: &Snapshot, obj: &Object) -> Result<BlockSpec, String> {
             datum_csys(snap, datum)?
         }
         Some(_) => return Err("csys must reference a datum CSYS".into()),
+    };
+    // The block dialog's origin point, measured along the CSYS's own axes
+    // (NX: "Origin and Edge Lengths"). Parts written before the origin
+    // existed have no such properties: the corner sits on the CSYS origin.
+    let csys = if obj.prop("origin_x").is_some() {
+        let o = point(snap, obj, "origin")?;
+        let shifted = csys.origin()
+            + csys.x_axis().get() * o.x
+            + csys.y_axis().get() * o.y
+            + csys.z_axis().get() * o.z;
+        Csys::new(shifted, csys.x_axis().get(), csys.y_axis().get())
+            .map_err(|e| format!("block origin: {e}"))?
+    } else {
+        csys
     };
     Ok(BlockSpec {
         csys,
@@ -328,6 +342,31 @@ pub fn create_block(
 ) -> Result<ObjectId, DocError> {
     let [x, y, z] = lengths;
     let mut b = Builder::new(tx, BLOCK, name)
+        .param("x_length", x)?
+        .param("y_length", y)?
+        .param("z_length", z)?;
+    if let Some(c) = csys {
+        b.spec = b.spec.prop(CSYS, Value::Ref(c)).dep(c, CSYS_ROLE);
+    }
+    b.create()
+}
+
+/// Creates a block whose corner is at `origin` (three length formulas,
+/// measured along the CSYS's axes; the absolute CSYS without `csys`), as the
+/// Block dialog's "Origin and Edge Lengths" type does.
+///
+/// # Errors
+/// A document error (bad formula, unknown name, unit error).
+pub fn create_block_at(
+    tx: &mut Tx<'_>,
+    name: &str,
+    origin: [&str; 3],
+    lengths: [&str; 3],
+    csys: Option<ObjectId>,
+) -> Result<ObjectId, DocError> {
+    let [x, y, z] = lengths;
+    let mut b = Builder::new(tx, BLOCK, name)
+        .params("origin", &origin)?
         .param("x_length", x)?
         .param("y_length", y)?
         .param("z_length", z)?;
