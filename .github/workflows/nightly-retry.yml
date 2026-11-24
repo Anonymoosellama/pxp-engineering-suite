@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Re-run the nightly once when a hosted runner was never acquired.
+#
+# Why this exists: the nightly of 2026-11-23 (run 45247638946) failed only
+# because `NIST STEP stress (macos-15)` was "not acquired by Runner of type
+# hosted even after multiple attempts" (macOS arm64 capacity). The job had
+# no steps and no runner, and every other job was green. Its dependent
+# `NIST STEP hashes identical across OSes` was skipped, so the cross-OS
+# hash comparison, the nightly's main product, never ran.
+#
+# A job cannot re-run its own workflow run (GitHub refuses to re-run a run
+# that is still in progress), so this separate workflow reacts to the
+# nightly's completion. It retries only when ALL of these hold:
+#   - the nightly failed on its first attempt (no retry loop);
+#   - no job failed on its own (a real failure, such as a fuzzer crash or a
+#     hash difference, must stay visible and is never retried);
+#   - at least one job was cancelled without ever starting a step (the
+#     infrastructure case).
+# `--failed` re-runs only the unacquired job and the jobs that were skipped
+# because of it, so the 2.5-hour fuzzing job does not run twice. The
+# artefacts of the jobs that already passed stay available to `determinism`.
+#
+# workflow_run workflows run from the default branch, so this takes effect
+# once it is merged into `main`.
+
+name: nightly-retry
+
+on:
+  workflow_run:
+    workflows: [nightly]
+    types: [completed]
+
+permissions:
+  actions: write   # re-run a workflow run
+  contents: read
+
+jobs:
+  retry-unacquired-runner:
+    name: re-run jobs that never got a runner
+    # Only the nightly's first attempt, and only if it did not succeed.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - name: Classify the failure, then re-run if it was infrastructure only
+        shell: bash
+        run: |
+          set -euo pipefail
+          jobs="$(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" --jq '.jobs[]' | jq -s '.')"
+
+          # Jobs that ran and failed: a real finding, never retried.
+          real_failures="$(jq '[.[] | select(.conclusion == "failure")] | length' <<<"$jobs")"
+          # Jobs cancelled before any step started: no runner was acquired.
+          unacquired="$(jq '[.[] | select(.conclusion == "cancelled" and (.steps | length) == 0)] | length' <<<"$jobs")"
+
+          echo "jobs that failed on their own: $real_failures"
+          echo "jobs that never got a runner:  $unacquired"
+          jq -r '.[] | select(.conclusion == "cancelled" and (.steps | length) == 0) | "  unacquired: " + .name' <<<"$jobs"
+
+          if [ "$real_failures" -ne 0 ]; then
+            echo "::notice::A job failed on its own; not retrying so the failure stays visible."
+            exit 0
+          fi
+          if [ "$unacquired" -eq 0 ]; then
+            echo "::notice::No unacquired runner; nothing to retry."
+            exit 0
+          fi
+
+          echo "Re-running the failed jobs of run $RUN_ID once."
+          gh run rerun "$RUN_ID" --repo "$REPO" --failed
